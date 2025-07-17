@@ -104,11 +104,11 @@ class DocumentationGenerator:
         # Generate suggestions
         suggestions = self.llm_service.suggest_documentation_improvements(current_docs, context)
         
-        # Generate an improved version
-        improved_docs = self._generate_improved_docs(current_docs, suggestions)
+        # Regenerate documentation with improvements
+        improved_docs = self.llm_service.regenerate_documentation(current_docs, context)
         
-        # Generate diff
-        diff = self.llm_service.generate_diff(current_docs, improved_docs)
+        # Generate diff using cydifflib
+        diff_html = self._generate_diff_html(current_docs, improved_docs)
         
         return f"""# Documentation Improvement Suggestions
 
@@ -116,9 +116,9 @@ class DocumentationGenerator:
 
 {suggestions}
 
-## Suggested Improvements
+## Diff Between Original and Improved Documentation
 
-{diff}
+{diff_html}
 
 ## Improved Documentation
 
@@ -127,41 +127,67 @@ class DocumentationGenerator:
 ```
 """
     
-    def _generate_improved_docs(self, current_docs: str, suggestions: str) -> str:
+    def _generate_diff_html(self, original_docs: str, improved_docs: str) -> str:
         """
-        Generate an improved version of the documentation based on suggestions.
+        Generate HTML diff between original and improved documentation using cydifflib.
         
         Args:
-            current_docs: Current documentation
-            suggestions: Improvement suggestions
+            original_docs: Original documentation content
+            improved_docs: Improved documentation content
             
         Returns:
-            Improved documentation
+            HTML diff as a string
         """
-        prompt = f"""
-        Here is the current documentation:
+        import cydifflib
+        from pygments import highlight
+        from pygments.lexers import DiffLexer
+        from pygments.formatters import HtmlFormatter
+        import html
         
-        ```
-        {current_docs}
-        ```
+        # Split the documents into lines
+        original_lines = original_docs.splitlines()
+        improved_lines = improved_docs.splitlines()
         
-        Here are suggestions for improvement:
+        # Generate unified diff
+        diff = cydifflib.unified_diff(
+            original_lines,
+            improved_lines,
+            lineterm='',
+            fromfile='Original Documentation',
+            tofile='Improved Documentation',
+            n=3  # Context lines
+        )
         
-        ```
-        {suggestions}
-        ```
+        # Convert diff to string
+        diff_text = '\n'.join(list(diff))
         
-        Please create an improved version of the documentation that incorporates these suggestions.
-        Only output the improved documentation content in markdown format, nothing else.
+        # Highlight the diff using Pygments
+        formatter = HtmlFormatter(style='colorful')
+        highlighted_diff = highlight(diff_text, DiffLexer(), formatter)
+        
+        # Add CSS for the diff
+        css = formatter.get_style_defs('.highlight')
+        
+        # Create the HTML output
+        html_diff = f"""
+        <style>
+        {css}
+        .diff-container {{
+            font-family: monospace;
+            white-space: pre-wrap;
+            margin: 20px 0;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background-color: #f8f8f8;
+        }}
+        </style>
+        <div class="diff-container">
+        {highlighted_diff}
+        </div>
         """
         
-        # Use the LLM to generate the improved version
-        improved = self.llm_service.llm.invoke([
-            {"role": "system", "content": "You are a documentation expert. Your task is to improve existing documentation based on suggestions."},
-            {"role": "user", "content": prompt}
-        ])
-        
-        return self.llm_service._extract_response_content(improved)
+        return html_diff
     
     def display_diff(self, original: str, improved: str) -> None:
         """
