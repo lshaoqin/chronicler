@@ -4,12 +4,9 @@ RAG (Retrieval-Augmented Generation) system for enhancing documentation generati
 
 import os
 import re
-import numpy as np
 from typing import List, Dict, Any, Tuple
-import faiss
-import tiktoken
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.vectorstores import FAISS
+from langchain_community.vectorstores import FAISS
 from langchain.schema import Document
 
 from repository import Repository

@@ -5,8 +5,8 @@ LLM service for interacting with language models.
 import os
 import json
 from typing import List, Dict, Any, Optional, Callable
-from langchain.chat_models import ChatOpenAI
-from langchain.embeddings.openai import OpenAIEmbeddings
+from langchain_openai import ChatOpenAI
+from langchain_openai import OpenAIEmbeddings
 from langchain.schema import HumanMessage, SystemMessage, AIMessage
 from langchain.prompts import ChatPromptTemplate, HumanMessagePromptTemplate, SystemMessagePromptTemplate
 
