@@ -4,46 +4,136 @@ LLM service for interacting with language models.
 
 import os
 import json
-from typing import List, Dict, Any, Optional, Callable
-from langchain_openai import ChatOpenAI
-from langchain_openai import OpenAIEmbeddings
-from langchain.schema import HumanMessage, SystemMessage, AIMessage
+from typing import List, Dict
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_ollama import ChatOllama, OllamaEmbeddings
+from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain.prompts import ChatPromptTemplate, HumanMessagePromptTemplate, SystemMessagePromptTemplate
+from langchain.embeddings.base import Embeddings
+from langchain.chat_models.base import BaseChatModel
 
 
 class LLMService:
     """Service for interacting with language models."""
     
-    def __init__(self, model_name: str = "gpt-4"):
+    def __init__(self, 
+                 model_provider: str = "openai",
+                 llm_model_name: str = "gpt-4o",
+                 embedding_model_name: str = "text-embedding-ada-002",
+                 temperature: float = 0.2):
         """
         Initialize the LLM service.
         
         Args:
-            model_name: Name of the model to use
+            model_provider: Provider of the model ("openai", "ollama", or "local")
+            llm_model_name: Name of the LLM model to use
+            embedding_model_name: Name of the embedding model to use
+            temperature: Temperature for LLM generation (higher = more creative)
         """
-        self.model_name = model_name
-        self.api_key = os.environ.get("OPENAI_API_KEY")
+        self.model_provider = model_provider.lower()
+        self.llm_model_name = llm_model_name
+        self.embedding_model_name = embedding_model_name
+        self.temperature = temperature
         
-        if not self.api_key:
-            raise ValueError(
-                "OpenAI API key not found. Please set the OPENAI_API_KEY environment variable."
+        # Initialize LLM based on provider
+        self.llm = self._initialize_llm()
+        
+        # Initialize embedding model based on provider
+        self.embedding_model = self._initialize_embedding_model()
+    
+    def _initialize_llm(self) -> BaseChatModel:
+        """Initialize the appropriate LLM based on the provider."""
+        if self.model_provider == "openai":
+            api_key = os.environ.get("OPENAI_API_KEY")
+            if not api_key:
+                raise ValueError(
+                    "OpenAI API key not found. Please set the OPENAI_API_KEY environment variable."
+                )
+            return ChatOpenAI(
+                model_name=self.llm_model_name,
+                temperature=self.temperature,
+                openai_api_key=api_key
             )
-            
-        self.llm = ChatOpenAI(
-            model_name=model_name,
-            temperature=0.2,
-            openai_api_key=self.api_key
-        )
-        
-        self.embedding_model = OpenAIEmbeddings(
-            model="text-embedding-ada-002",
-            openai_api_key=self.api_key
-        )
-        
-    def get_embedding_model(self):
+        elif self.model_provider == "ollama":
+            # Default Ollama host is localhost:11434
+            ollama_host = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+            return ChatOllama(
+                model=self.llm_model_name,
+                temperature=self.temperature,
+                base_url=ollama_host
+            )
+        elif self.model_provider == "local":
+            # For local models, we use Ollama as the backend
+            ollama_host = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+            return ChatOllama(
+                model=self.llm_model_name,
+                temperature=self.temperature,
+                base_url=ollama_host
+            )
+        else:
+            raise ValueError(f"Unsupported model provider: {self.model_provider}")
+    
+    def _initialize_embedding_model(self) -> Embeddings:
+        """Initialize the appropriate embedding model based on the provider."""
+        if self.model_provider == "openai":
+            api_key = os.environ.get("OPENAI_API_KEY")
+            if not api_key:
+                raise ValueError(
+                    "OpenAI API key not found. Please set the OPENAI_API_KEY environment variable."
+                )
+            return OpenAIEmbeddings(
+                model=self.embedding_model_name,
+                openai_api_key=api_key
+            )
+        elif self.model_provider == "ollama":
+            ollama_host = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+            return OllamaEmbeddings(
+                model=self.embedding_model_name,
+                base_url=ollama_host
+            )
+        elif self.model_provider == "local":
+            # Use HuggingFace Sentence Transformers for local embeddings
+            return HuggingFaceEmbeddings(
+                model_name=self.embedding_model_name or "all-MiniLM-L6-v2"
+            )
+        else:
+            raise ValueError(f"Unsupported model provider: {self.model_provider}")
+    
+    def get_embedding_model(self) -> Embeddings:
         """Get the embedding model."""
         return self.embedding_model
         
+    def _extract_response_content(self, response) -> str:
+        """
+        Extract content from different response formats based on the model provider.
+        
+        Args:
+            response: Response from the language model
+            
+        Returns:
+            Extracted content as a string
+        """
+        if hasattr(response, 'content'):
+            # OpenAI format
+            return response.content
+        elif isinstance(response, dict):
+            # Various dictionary formats
+            if 'content' in response:
+                return response['content']
+            elif 'text' in response:
+                return response['text']
+            elif 'message' in response and isinstance(response['message'], dict):
+                if 'content' in response['message']:
+                    return response['message']['content']
+            # Try to convert the whole dict to string as last resort
+            return str(response)
+        elif isinstance(response, str):
+            # Direct string response
+            return response
+        else:
+            # Fallback: convert to string
+            return str(response)
+    
     def generate_documentation(self, context: str, file_path: str) -> str:
         """
         Generate documentation for a file.
@@ -75,8 +165,8 @@ class LLMService:
             context=context
         )
         
-        response = self.llm(formatted_prompt.to_messages())
-        return response.content
+        response = self.llm.invoke(formatted_prompt.to_messages())
+        return self._extract_response_content(response)
         
     def analyze_repository_structure(self, structure: Dict) -> str:
         """
@@ -106,8 +196,8 @@ class LLMService:
             structure=json.dumps(structure, indent=2)
         )
         
-        response = self.llm(formatted_prompt.to_messages())
-        return response.content
+        response = self.llm.invoke(formatted_prompt.to_messages())
+        return self._extract_response_content(response)
         
     def suggest_documentation_improvements(self, current_docs: str, context: str) -> str:
         """
@@ -144,8 +234,8 @@ class LLMService:
             context=context
         )
         
-        response = self.llm(formatted_prompt.to_messages())
-        return response.content
+        response = self.llm.invoke(formatted_prompt.to_messages())
+        return self._extract_response_content(response)
         
     def generate_diff(self, original: str, improved: str) -> str:
         """
@@ -177,8 +267,8 @@ class LLMService:
             improved=improved
         )
         
-        response = self.llm(formatted_prompt.to_messages())
-        return response.content
+        response = self.llm.invoke(formatted_prompt.to_messages())
+        return self._extract_response_content(response)
         
     def find_relevant_files(self, query: str, file_list: List[str]) -> List[str]:
         """
@@ -212,17 +302,18 @@ class LLMService:
             files="\n".join(file_list)
         )
         
-        response = self.llm(formatted_prompt.to_messages())
+        response = self.llm.invoke(formatted_prompt.to_messages())
+        content = self._extract_response_content(response)
         
         try:
             # Extract JSON array from response
-            result = json.loads(response.content)
+            result = json.loads(content)
             if isinstance(result, list):
                 return result
             return []
         except:
             # Fallback: try to extract file paths from text response
-            lines = response.content.split("\n")
+            lines = content.split("\n")
             files = []
             for line in lines:
                 for file in file_list:
@@ -230,3 +321,39 @@ class LLMService:
                         files.append(file)
                         break
             return files[:5]  # Return at most 5 files
+            
+    def _generate_improved_docs(self, current_docs: str, suggestions: str) -> str:
+        """
+        Generate an improved version of the documentation based on suggestions.
+        
+        Args:
+            current_docs: Current documentation
+            suggestions: Improvement suggestions
+            
+        Returns:
+            Improved documentation
+        """
+        prompt = f"""
+        Here is the current documentation:
+        
+        ```
+        {current_docs}
+        ```
+        
+        Here are suggestions for improvement:
+        
+        ```
+        {suggestions}
+        ```
+        
+        Please create an improved version of the documentation that incorporates these suggestions.
+        Only output the improved documentation content in markdown format, nothing else.
+        """
+        
+        # Use the LLM to generate the improved version
+        improved = self.llm.invoke([
+            {"role": "system", "content": "You are a documentation expert. Your task is to improve existing documentation based on suggestions."},
+            {"role": "user", "content": prompt}
+        ])
+        
+        return self._extract_response_content(improved)

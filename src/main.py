@@ -33,6 +33,22 @@ def analyze(
     api_key: Optional[str] = typer.Option(
         None, "--api-key", "-k", help="OpenAI API key"
     ),
+    model_provider: str = typer.Option(
+        "openai", "--provider", "-p", help="Model provider: 'openai', 'ollama', or 'local'"
+    ),
+    llm_model: str = typer.Option(
+        "gpt-4o", "--llm-model", "-l", help="LLM model name (e.g., 'gpt-4o' for OpenAI, 'llama2' for Ollama)"
+    ),
+    embedding_model: str = typer.Option(
+        "text-embedding-ada-002", "--embedding-model", "-e", 
+        help="Embedding model name (e.g., 'text-embedding-ada-002' for OpenAI, 'llama2' for Ollama, 'all-MiniLM-L6-v2' for local)"
+    ),
+    temperature: float = typer.Option(
+        0.2, "--temperature", "-t", help="Temperature for LLM generation (0.0-1.0)"
+    ),
+    ollama_host: Optional[str] = typer.Option(
+        None, "--ollama-host", help="Ollama host URL (default: http://localhost:11434)"
+    ),
 ):
     """Analyze a repository and generate documentation."""
     # Display welcome message
@@ -43,14 +59,26 @@ def analyze(
         )
     )
     
-    # Set API key if provided
+    # Set environment variables if provided
     if api_key:
         os.environ["OPENAI_API_KEY"] = api_key
+    
+    if ollama_host:
+        os.environ["OLLAMA_HOST"] = ollama_host
     
     try:
         # Initialize components
         repository = Repository(repo)
-        llm_service = LLMService()
+        
+        # Initialize LLM service with specified provider and models
+        console.print(f"[bold]Using {model_provider} models:[/bold] LLM={llm_model}, Embeddings={embedding_model}")
+        llm_service = LLMService(
+            model_provider=model_provider,
+            llm_model_name=llm_model,
+            embedding_model_name=embedding_model,
+            temperature=temperature
+        )
+        
         rag_system = RAGSystem(repository, llm_service)
         doc_generator = DocumentationGenerator(repository, rag_system, llm_service)
         

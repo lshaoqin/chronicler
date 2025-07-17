@@ -156,12 +156,12 @@ class DocumentationGenerator:
         """
         
         # Use the LLM to generate the improved version
-        improved = self.llm_service.llm([
+        improved = self.llm_service.llm.invoke([
             {"role": "system", "content": "You are a documentation expert. Your task is to improve existing documentation based on suggestions."},
             {"role": "user", "content": prompt}
         ])
         
-        return improved.content
+        return self.llm_service._extract_response_content(improved)
     
     def display_diff(self, original: str, improved: str) -> None:
         """
