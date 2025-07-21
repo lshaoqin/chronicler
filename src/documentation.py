@@ -37,16 +37,25 @@ class DocumentationGenerator:
         self.llm_service = llm_service
         self.console = Console()
         
+        # Create timestamp for folder naming
+        self.timestamp = time.strftime("%Y%m%d_%H%M%S")
+        
+        # Extract repository name from URL or path
+        repo_name = self._extract_repo_name(self.repository.repo_url_or_path)
+        
         # Set output directory
         if output_dir:
             self.output_dir = output_dir
         else:
-            self.output_dir = Path(os.path.join(self.repository.repo_path, "docs"))
+            # Use a fixed output directory in the current working directory with repo name and date
+            # This ensures documentation is saved to the same location regardless of where the repository is cloned
+            current_dir = os.getcwd()
+            docs_dir = Path(os.path.join(current_dir, "docs"))
+            docs_dir.mkdir(exist_ok=True, parents=True)
             
-        self.output_dir.mkdir(exist_ok=True, parents=True)
-        
-        # Create timestamped folder for this documentation run
-        self.timestamp = time.strftime("%Y%m%d_%H%M%S")
+            # Create folder with repository name and date
+            self.output_dir = Path(os.path.join(docs_dir, f"{repo_name}_{self.timestamp}"))
+            self.output_dir.mkdir(exist_ok=True, parents=True)
         
         # Initialize documentation storage directly in docs folder
         self.doc_storage = DocumentationStorage(str(self.output_dir))
@@ -445,14 +454,23 @@ class DocumentationGenerator:
             border_style="green"
         ))
     
+    def _extract_repo_name(self, repo_url_or_path: str) -> str:
+        """Extract repository name from URL or path."""
+        # Handle GitHub URLs
+        if repo_url_or_path.startswith(('http://', 'https://', 'git@')):
+            # Remove .git extension if present
+            if repo_url_or_path.endswith('.git'):
+                repo_url_or_path = repo_url_or_path[:-4]
+                
+            # Extract repo name from URL
+            parts = repo_url_or_path.split('/')
+            return parts[-1].split('.')[0]  # Get the last part and remove any extension
+        else:
+            # For local paths, use the directory name
+            return os.path.basename(os.path.abspath(repo_url_or_path))
+    
     def save_documentation(self, content: str, output_path: str) -> None:
-        """
-        Save documentation to a file.
-        
-        Args:
-            content: Documentation content
-            output_path: Path to save the documentation
-        """
+        """Save documentation to a file."""
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         
         with open(output_path, 'w', encoding='utf-8') as f:
