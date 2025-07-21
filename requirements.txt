@@ -16,3 +16,10 @@ pygments>=2.16.1
 langchain-community>=0.3.27
 langchain-ollama>=0.0.1
 sentence-transformers>=2.2.2
+
+# Vector database dependencies (install as needed)
+pinecone-client>=2.2.1  # For Pinecone vector database
+weaviate-client>=3.15.0  # For Weaviate vector database
+chromaddb>=0.3.26  # For ChromaDB vector database
+qdrant-client>=1.1.1  # For Qdrant vector database
+pymilvus>=2.2.8  # For Milvus vector database

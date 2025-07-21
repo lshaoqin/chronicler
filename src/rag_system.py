@@ -11,6 +11,7 @@ from langchain.schema import Document
 
 from repository import Repository
 from llm_service import LLMService
+from vector_db_config import VectorDBConfig
 
 
 class RAGSystem:
@@ -345,11 +346,10 @@ class RAGSystem:
         """Create a vector store from the documents."""
         if not self.documents:
             raise ValueError("No documents to create vector store from")
-            
-        self.vector_store = FAISS.from_documents(
-            self.documents,
-            self.llm_service.get_embedding_model()
-        )
+        
+        # Use VectorDBConfig to create the appropriate vector store
+        vector_db_config = VectorDBConfig(self.llm_service.get_embedding_model())
+        self.vector_store = vector_db_config.create_vector_store(self.documents)
     
     def search(self, query: str, k: int = 5) -> List[Document]:
         """
