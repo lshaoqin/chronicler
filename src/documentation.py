@@ -45,7 +45,10 @@ class DocumentationGenerator:
             
         self.output_dir.mkdir(exist_ok=True, parents=True)
         
-        # Initialize documentation storage
+        # Create timestamped folder for this documentation run
+        self.timestamp = time.strftime("%Y%m%d_%H%M%S")
+        
+        # Initialize documentation storage directly in docs folder
         self.doc_storage = DocumentationStorage(str(self.output_dir))
         
     def create_documentation(self, file_extensions: Optional[List[str]] = None) -> str:

@@ -65,9 +65,10 @@ class DocumentationStorage:
             base_path: Base path for storing documentation
         """
         self.base_path = Path(base_path)
+        self.timestamp = time.strftime("%Y%m%d_%H%M%S")
         self.sections_dir = self.base_path / "sections"
         self.sections_dir.mkdir(exist_ok=True, parents=True)
-        self.index_file = self.base_path / "index.json"
+        self.index_file = self.base_path / f"index_{self.timestamp}.json"
         self.index = self._load_index()
         
     def _load_index(self) -> Dict[str, Dict[str, Any]]:
@@ -201,7 +202,7 @@ class DocumentationStorage:
         """
         sections = self.get_all_sections()
         if not sections:
-            return "# Repository Documentation\n\nNo documentation sections found."
+            return f"# Repository Documentation (Generated: {self.timestamp})\n\nNo documentation sections found."
             
         # Sort sections by file path
         sorted_sections = sorted(sections.items(), key=lambda x: x[0])
@@ -218,8 +219,11 @@ class DocumentationStorage:
                 
             grouped_sections[dir_path].append((file_path, section))
             
+        # Get current date and time for documentation header
+        generation_time = time.strftime("%Y-%m-%d %H:%M:%S")
+            
         # Build the documentation
-        doc_parts = ["# Repository Documentation\n\n"]
+        doc_parts = [f"# Repository Documentation\n\n**Generated: {generation_time}**\n\n"]
         
         # Add a table of contents
         doc_parts.append("## Table of Contents\n\n")
