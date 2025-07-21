@@ -192,77 +192,7 @@ def update(
     return 0
 
 
-@app.command()
-def analyze(
-    repo: str = common_params["repo"],
-    output_dir: Optional[Path] = common_params["output_dir"],
-    api_key: Optional[str] = common_params["api_key"],
-    model_provider: str = common_params["model_provider"],
-    llm_model: str = common_params["llm_model"],
-    embedding_model: str = common_params["embedding_model"],
-    temperature: float = common_params["temperature"],
-    ollama_host: Optional[str] = common_params["ollama_host"],
-):
-    """Legacy command: Analyze a repository and generate documentation."""
-    
-    console.print(
-        Panel.fit(
-            "⚠️ [bold yellow]Warning: 'analyze' is a legacy command[/bold yellow]\n"
-            "Consider using 'create' or 'update' commands instead.",
-            border_style="yellow",
-        )
-    )
-    
-    # Set environment variables if provided
-    if api_key:
-        os.environ["OPENAI_API_KEY"] = api_key
-    
-    if ollama_host:
-        os.environ["OLLAMA_HOST"] = ollama_host
-    
-    try:
-        # Initialize components
-        repository = Repository(repo)
-        
-        # Initialize LLM service with specified provider and models
-        console.print(f"[bold]Using {model_provider} models:[/bold] LLM={llm_model}, Embeddings={embedding_model}")
-        llm_service = LLMService(
-            model_provider=model_provider,
-            llm_model_name=llm_model,
-            embedding_model_name=embedding_model,
-            temperature=temperature
-        )
-        
-        rag_system = RAGSystem(repository, llm_service)
-        doc_generator = DocumentationGenerator(repository, rag_system, llm_service, output_dir)
-        
-        # Process repository
-        console.print("[bold]Analyzing repository...[/bold]")
-        repository.clone_or_load()
-        
-        console.print("[bold]Building knowledge base...[/bold]")
-        rag_system.build_knowledge_base()
-        
-        console.print("[bold]Generating documentation...[/bold]")
-        documentation = doc_generator.generate()
-        
-        console.print("[bold]Suggesting improvements...[/bold]")
-        suggestions = doc_generator.suggest_improvements()
-        
-        # Output results
-        with open(os.path.join(doc_generator.output_dir, "README.md"), "w") as f:
-            f.write(documentation)
-            
-        with open(os.path.join(doc_generator.output_dir, "suggestions.md"), "w") as f:
-            f.write(suggestions)
-            
-        console.print(f"[bold green]Documentation generated successfully at {doc_generator.output_dir}[/bold green]")
-        
-    except Exception as e:
-        console.print(f"[bold red]Error: {str(e)}[/bold red]")
-        return 1
-        
-    return 0
+
 
 if __name__ == "__main__":
     app()

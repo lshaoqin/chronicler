@@ -10,29 +10,47 @@ Chronicler is a tool designed to analyze GitHub repositories and generate high-q
 *   Generates documentation based on the analysis, including README.md and suggestions for improvement
 *   Supports multiple LLM providers, including OpenAI and Ollama
 *   Customizable output directory and API key
+*   Two main operations: create documentation from scratch and update based on git commits
+*   Support for connecting to external vector databases
 
 ## Getting Started
 
 To use Chronicler, follow these steps:
 
-1.  Clone or load your GitHub repository into Chronicler using the `analyze` command.
+1.  Clone or load your GitHub repository using one of the available commands: `create` or `update`.
 2.  Provide any necessary environment variables, such as an OpenAI API key or Ollama host URL.
-3.  Run the `analyze` command with the desired output directory and LLM model provider.
+3.  Run the appropriate command with the desired options.
 
 ### Example Usage
 
 ```bash
-# Clone a GitHub repository and generate documentation
-python main.py analyze --repo https://github.com/user/repository --output /path/to/output/dir
+# Create documentation from scratch
+python main.py create --repo https://github.com/user/repository --output /path/to/output/dir
+
+# Specify file extensions to process
+python main.py create --repo https://github.com/user/repository --extensions py,js,md,jsx
 
 # Use OpenAI models for LLM generation
-python main.py analyze --repo https://github.com/user/repository --provider openai --llm-model gpt-4o --embedding-model text-embedding-ada-002 --temperature 0.2
+python main.py create --repo https://github.com/user/repository --provider openai --llm-model gpt-4o --embedding-model text-embedding-ada-002 --temperature 0.2
+
+# Update documentation based on latest git commit
+python main.py update --repo https://github.com/user/repository
+
+# Update documentation based on specific commit
+python main.py update --repo https://github.com/user/repository --commit abc1234
 
 # Customize output directory and API key
-python main.py analyze --repo https://github.com/user/repository --output /path/to/output/dir --api-key YOUR_API_KEY
+python main.py create --repo https://github.com/user/repository --output /path/to/output/dir --api-key YOUR_API_KEY
 ```
 
 ## Documentation
+
+### Commands
+
+Chronicler provides two main commands:
+
+* **create**: Generate documentation from scratch by analyzing repository files
+* **update**: Update existing documentation based on git commit changes
 
 ### Repository Analysis
 
@@ -75,3 +93,4 @@ Future development plans include:
 *   **Integration with CI/CD Pipelines**: Integrating Chronicler with popular CI/CD pipelines to automate the analysis and generation process.
 *   **Support for Additional LLM Providers**: Adding support for additional LLM providers to expand Chronicler's capabilities.
 *   **Enhanced Design Decision Analysis**: Improving the design decision analysis component to provide more detailed insights into repository architecture, scalability, and maintainability.
+*   **Additional Vector Database Integrations**: Expanding support for more vector database providers and configurations.
