@@ -5,7 +5,7 @@ Vector database configuration and connection management.
 import os
 from typing import Dict, Any, Optional, Union
 from langchain.embeddings.base import Embeddings
-from langchain.vectorstores import FAISS
+from langchain_community.vectorstores import FAISS
 from langchain.vectorstores.base import VectorStore
 
 
@@ -43,7 +43,7 @@ class VectorDBConfig:
         
         if self.db_type == "pinecone":
             # Import here to avoid unnecessary dependencies if not used
-            from langchain.vectorstores import Pinecone
+            from langchain_community.vectorstores import Pinecone
             
             config["api_key"] = os.environ.get("PINECONE_API_KEY")
             config["environment"] = os.environ.get("PINECONE_ENVIRONMENT")
@@ -58,7 +58,7 @@ class VectorDBConfig:
                 
         elif self.db_type == "weaviate":
             # Import here to avoid unnecessary dependencies if not used
-            from langchain.vectorstores import Weaviate
+            from langchain_community.vectorstores import Weaviate
             
             config["url"] = os.environ.get("WEAVIATE_URL")
             config["api_key"] = os.environ.get("WEAVIATE_API_KEY")
@@ -79,7 +79,7 @@ class VectorDBConfig:
             
         elif self.db_type == "qdrant":
             # Import here to avoid unnecessary dependencies if not used
-            from langchain.vectorstores import Qdrant
+            from langchain_community.vectorstores import Qdrant
             
             config["url"] = os.environ.get("QDRANT_URL")
             config["api_key"] = os.environ.get("QDRANT_API_KEY")
@@ -92,7 +92,7 @@ class VectorDBConfig:
                 
         elif self.db_type == "milvus":
             # Import here to avoid unnecessary dependencies if not used
-            from langchain.vectorstores import Milvus
+            from langchain_community.vectorstores import Milvus
             
             config["uri"] = os.environ.get("MILVUS_URI")
             config["collection_name"] = os.environ.get("MILVUS_COLLECTION_NAME", "chronicler")
@@ -128,7 +128,7 @@ class VectorDBConfig:
                 return FAISS.from_documents(documents, self.embedding_model)
                 
             elif self.db_type == "pinecone":
-                from langchain.vectorstores import Pinecone
+                from langchain_community.vectorstores import Pinecone
                 import pinecone
                 
                 # Initialize Pinecone
@@ -168,7 +168,7 @@ class VectorDBConfig:
                 )
                 
             elif self.db_type == "chroma":
-                from langchain.vectorstores import Chroma
+                from langchain_community.vectorstores import Chroma
                 
                 return Chroma.from_documents(
                     documents,
@@ -178,7 +178,7 @@ class VectorDBConfig:
                 )
                 
             elif self.db_type == "qdrant":
-                from langchain.vectorstores import Qdrant
+                from langchain_community.vectorstores import Qdrant
                 import qdrant_client
                 
                 # Initialize Qdrant client
@@ -197,7 +197,7 @@ class VectorDBConfig:
                 )
                 
             elif self.db_type == "milvus":
-                from langchain.vectorstores import Milvus
+                from langchain_community.vectorstores import Milvus
                 
                 return Milvus.from_documents(
                     documents,
