@@ -6,9 +6,10 @@ import os
 import shutil
 import tempfile
 from pathlib import Path
-from typing import List, Dict, Optional, Set
+from typing import List, Dict, Optional, Set, Tuple
 import git
 from rich.progress import Progress
+from rich.console import Console
 
 
 class Repository:
@@ -27,6 +28,7 @@ class Repository:
         self.repo = None
         self.file_index = {}
         self.readme_content = ""
+        self.console = Console()
         
     def clone_or_load(self) -> None:
         """Clone a repository from URL or load from local path."""
@@ -181,6 +183,145 @@ class Repository:
                     current = current[part]
         
         return structure
+    
+    def get_changed_files(self, commit_hash: Optional[str] = None) -> List[str]:
+        """
+        Get files changed in a specific commit or between HEAD and the previous commit.
+        
+        Args:
+            commit_hash: Hash of the commit to analyze, or None for the latest commit
+            
+        Returns:
+            List of relative paths to changed files
+        """
+        if not self.repo:
+            raise ValueError("Repository not loaded. Call clone_or_load() first.")
+            
+        if commit_hash:
+            # Get changes for a specific commit
+            commit = self.repo.commit(commit_hash)
+            prev_commit = commit.parents[0] if commit.parents else None
+            if not prev_commit:
+                # If it's the first commit, get all files in the commit
+                return [item.a_path for item in commit.tree.traverse()]
+                
+            diffs = prev_commit.diff(commit)
+        else:
+            # Get changes between HEAD and its parent
+            head = self.repo.head.commit
+            prev_commit = head.parents[0] if head.parents else None
+            if not prev_commit:
+                # If it's the first commit, get all files in the commit
+                return [item.a_path for item in head.tree.traverse()]
+                
+            diffs = prev_commit.diff(head)
+            
+        changed_files = []
+        for diff in diffs:
+            if diff.a_path and diff.a_path not in changed_files:
+                changed_files.append(diff.a_path)
+            if diff.b_path and diff.b_path != diff.a_path and diff.b_path not in changed_files:
+                changed_files.append(diff.b_path)
+                
+        # Filter out files that aren't in the file index (e.g., binary files)
+        return [f for f in changed_files if f in self.file_index]
+    
+    def get_file_diff(self, file_path: str, commit_hash: Optional[str] = None) -> Tuple[str, str]:
+        """
+        Get the diff for a specific file between commits.
+        
+        Args:
+            file_path: Relative path to the file
+            commit_hash: Hash of the commit to analyze, or None for the latest commit
+            
+        Returns:
+            Tuple of (old_content, new_content)
+        """
+        if not self.repo:
+            raise ValueError("Repository not loaded. Call clone_or_load() first.")
+            
+        if commit_hash:
+            commit = self.repo.commit(commit_hash)
+            prev_commit = commit.parents[0] if commit.parents else None
+        else:
+            commit = self.repo.head.commit
+            prev_commit = commit.parents[0] if commit.parents else None
+            
+        # Get old content
+        old_content = ""
+        if prev_commit:
+            try:
+                old_blob = prev_commit.tree / file_path
+                old_content = old_blob.data_stream.read().decode('utf-8')
+            except (KeyError, UnicodeDecodeError):
+                # File didn't exist or is binary
+                pass
+                
+        # Get new content
+        new_content = ""
+        try:
+            new_blob = commit.tree / file_path
+            new_content = new_blob.data_stream.read().decode('utf-8')
+        except (KeyError, UnicodeDecodeError):
+            # File was deleted or is binary
+            pass
+            
+        return old_content, new_content
+    
+    def get_commit_message(self, commit_hash: Optional[str] = None) -> str:
+        """
+        Get the message for a specific commit.
+        
+        Args:
+            commit_hash: Hash of the commit to analyze, or None for the latest commit
+            
+        Returns:
+            Commit message
+        """
+        if not self.repo:
+            raise ValueError("Repository not loaded. Call clone_or_load() first.")
+            
+        if commit_hash:
+            commit = self.repo.commit(commit_hash)
+        else:
+            commit = self.repo.head.commit
+            
+        return commit.message
+    
+    def get_commit_summary(self, commit_hash: Optional[str] = None) -> Dict[str, any]:
+        """
+        Get a summary of a commit including changed files and commit message.
+        
+        Args:
+            commit_hash: Hash of the commit to analyze, or None for the latest commit
+            
+        Returns:
+            Dictionary with commit information
+        """
+        if not self.repo:
+            raise ValueError("Repository not loaded. Call clone_or_load() first.")
+            
+        if commit_hash:
+            commit = self.repo.commit(commit_hash)
+        else:
+            commit = self.repo.head.commit
+            
+        changed_files = self.get_changed_files(commit_hash)
+        
+        return {
+            "hash": commit.hexsha,
+            "short_hash": commit.hexsha[:7],
+            "author": f"{commit.author.name} <{commit.author.email}>",
+            "date": commit.committed_datetime.isoformat(),
+            "message": commit.message,
+            "changed_files": changed_files,
+            "stats": {
+                "insertions": commit.stats.total["insertions"],
+                "deletions": commit.stats.total["deletions"],
+                "lines": commit.stats.total["lines"],
+                "files": len(commit.stats.files)
+            }
+        }
     
     def cleanup(self) -> None:
         """Clean up temporary files if necessary."""
