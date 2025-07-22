@@ -302,50 +302,6 @@ class DocumentationGenerator:
         section.last_updated = time.time()
         self.doc_storage.save_section(section)
         
-    def generate(self) -> str:
-        """
-        Generate documentation for the repository (legacy method).
-        
-        Returns:
-            Generated documentation as a string
-        """
-        self.console.print("[yellow]Warning: Using legacy documentation generation method.[/yellow]")
-        self.console.print("[yellow]Consider using create_documentation() instead for better results.[/yellow]")
-        
-        # Start with repository structure analysis
-        structure = self.repository.get_directory_structure()
-        
-        # Get relevant files for documentation
-        python_files = self.repository.get_files_by_extension('.py')
-        
-        # Generate documentation sections
-        sections = [
-            "# Repository Documentation\n\n",
-            "## Overview\n\n",
-            "\n\n## Key Components\n\n"
-        ]
-        
-        # Process key files
-        for file_path in python_files[:10]:  # Limit to 10 files to avoid API overuse
-            self.console.print(f"Processing file: {file_path}")
-            
-            try:
-                # Get context for the file
-                context = self.rag_system.get_file_context(file_path)
-                
-                # Generate documentation for the file
-                file_doc = self.llm_service.generate_documentation(context, file_path)
-                
-                # Add to sections
-                sections.append(f"### {file_path}\n\n")
-                sections.append(file_doc)
-                sections.append("\n\n")
-            except Exception as e:
-                self.console.print(f"[red]Error processing {file_path}: {str(e)}[/red]")
-        
-        # Combine all sections
-        return "".join(sections)
-    
     def _extract_repo_name(self, repo_url_or_path: str) -> str:
         """Extract repository name from URL or path."""
         if repo_url_or_path.endswith('/'):
