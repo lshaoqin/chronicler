@@ -37,14 +37,14 @@ common_params = {
         None, "--api-key", "-k", help="OpenAI API key"
     ),
     "model_provider": typer.Option(
-        "openai", "--provider", "-p", help="Model provider: 'openai', 'ollama', or 'local'"
+        None, "--provider", "-p", help="Model provider: 'openai', 'ollama', or 'local' (defaults to MODEL_PROVIDER env var or 'openai')"
     ),
     "llm_model": typer.Option(
-        "gpt-4o", "--llm-model", "-l", help="LLM model name (e.g., 'gpt-4o' for OpenAI, 'llama2' for Ollama)"
+        None, "--llm-model", "-l", help="LLM model name (e.g., 'gpt-4o' for OpenAI, 'llama2' for Ollama) (defaults to LLM_MODEL env var)"
     ),
     "embedding_model": typer.Option(
-        "text-embedding-ada-002", "--embedding-model", "-e", 
-        help="Embedding model name (e.g., 'text-embedding-ada-002' for OpenAI, 'llama2' for Ollama, 'all-MiniLM-L6-v2' for local)"
+        None, "--embedding-model", "-e", 
+        help="Embedding model name (e.g., 'text-embedding-ada-002' for OpenAI, 'llama2' for Ollama) (defaults to EMBEDDING_MODEL env var)"
     ),
     "temperature": typer.Option(
         0.2, "--temperature", "-t", help="Temperature for LLM generation (0.0-1.0)"
@@ -59,9 +59,9 @@ def create(
     repo: str = common_params["repo"],
     output_dir: Optional[Path] = common_params["output_dir"],
     api_key: Optional[str] = common_params["api_key"],
-    model_provider: str = common_params["model_provider"],
-    llm_model: str = common_params["llm_model"],
-    embedding_model: str = common_params["embedding_model"],
+    model_provider: Optional[str] = common_params["model_provider"],
+    llm_model: Optional[str] = common_params["llm_model"],
+    embedding_model: Optional[str] = common_params["embedding_model"],
     temperature: float = common_params["temperature"],
     ollama_host: Optional[str] = common_params["ollama_host"],
     file_extensions: Optional[List[str]] = typer.Option(
@@ -84,6 +84,21 @@ def create(
     if ollama_host:
         os.environ["OLLAMA_HOST"] = ollama_host
     
+    # Set model configuration if specified via command line (for backward compatibility)
+    if model_provider:
+        os.environ["MODEL_PROVIDER"] = model_provider
+    
+    if llm_model:
+        os.environ["LLM_MODEL"] = llm_model
+    
+    if embedding_model:
+        os.environ["EMBEDDING_MODEL"] = embedding_model
+    
+    # Get the effective model provider (from env var or default to openai)
+    effective_model_provider = os.environ.get("MODEL_PROVIDER", "openai")
+    effective_llm_model = os.environ.get("LLM_MODEL", "gpt-4o")
+    effective_embedding_model = os.environ.get("EMBEDDING_MODEL", "text-embedding-ada-002")
+    
     # Parse file extensions if provided
     extensions_list = None
     if file_extensions:
@@ -94,11 +109,8 @@ def create(
         repository = Repository(repo)
         
         # Initialize LLM service with specified provider and models
-        console.print(f"[bold]Using {model_provider} models:[/bold] LLM={llm_model}, Embeddings={embedding_model}")
+        console.print(f"[bold]Using {effective_model_provider} models:[/bold] LLM={effective_llm_model}, Embeddings={effective_embedding_model}")
         llm_service = LLMService(
-            model_provider=model_provider,
-            llm_model_name=llm_model,
-            embedding_model_name=embedding_model,
             temperature=temperature
         )
         
@@ -130,9 +142,9 @@ def update(
     repo: str = common_params["repo"],
     output_dir: Optional[Path] = common_params["output_dir"],
     api_key: Optional[str] = common_params["api_key"],
-    model_provider: str = common_params["model_provider"],
-    llm_model: str = common_params["llm_model"],
-    embedding_model: str = common_params["embedding_model"],
+    model_provider: Optional[str] = common_params["model_provider"],
+    llm_model: Optional[str] = common_params["llm_model"],
+    embedding_model: Optional[str] = common_params["embedding_model"],
     temperature: float = common_params["temperature"],
     ollama_host: Optional[str] = common_params["ollama_host"],
     commit: Optional[str] = typer.Option(
@@ -156,16 +168,28 @@ def update(
     if ollama_host:
         os.environ["OLLAMA_HOST"] = ollama_host
     
+    # Set model configuration if specified via command line (for backward compatibility)
+    if model_provider:
+        os.environ["MODEL_PROVIDER"] = model_provider
+    
+    if llm_model:
+        os.environ["LLM_MODEL"] = llm_model
+    
+    if embedding_model:
+        os.environ["EMBEDDING_MODEL"] = embedding_model
+    
+    # Get the effective model provider (from env var or default to openai)
+    effective_model_provider = os.environ.get("MODEL_PROVIDER", "openai")
+    effective_llm_model = os.environ.get("LLM_MODEL", "gpt-4o")
+    effective_embedding_model = os.environ.get("EMBEDDING_MODEL", "text-embedding-ada-002")
+    
     try:
         # Initialize components
         repository = Repository(repo)
         
         # Initialize LLM service with specified provider and models
-        console.print(f"[bold]Using {model_provider} models:[/bold] LLM={llm_model}, Embeddings={embedding_model}")
+        console.print(f"[bold]Using {effective_model_provider} models:[/bold] LLM={effective_llm_model}, Embeddings={effective_embedding_model}")
         llm_service = LLMService(
-            model_provider=model_provider,
-            llm_model_name=llm_model,
-            embedding_model_name=embedding_model,
             temperature=temperature
         )
         
@@ -190,8 +214,6 @@ def update(
         return 1
         
     return 0
-
-
 
 
 if __name__ == "__main__":

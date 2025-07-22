@@ -17,22 +17,26 @@ class LLMService:
     """Service for interacting with language models."""
     
     def __init__(self, 
-                 model_provider: str = "openai",
-                 llm_model_name: str = "gpt-4o",
-                 embedding_model_name: str = "text-embedding-ada-002",
+                 model_provider: str = None,
+                 llm_model_name: str = None,
+                 embedding_model_name: str = None,
                  temperature: float = 0.2):
         """
         Initialize the LLM service.
         
         Args:
-            model_provider: Provider of the model ("openai", "ollama", or "local")
-            llm_model_name: Name of the LLM model to use
-            embedding_model_name: Name of the embedding model to use
+            model_provider: Provider of the model ("openai", "ollama", or "local"). If None, reads from MODEL_PROVIDER env var.
+            llm_model_name: Name of the LLM model to use. If None, reads from LLM_MODEL env var.
+            embedding_model_name: Name of the embedding model to use. If None, reads from EMBEDDING_MODEL env var.
             temperature: Temperature for LLM generation (higher = more creative)
         """
-        self.model_provider = model_provider.lower()
-        self.llm_model_name = llm_model_name
-        self.embedding_model_name = embedding_model_name
+        # Get model provider from environment variable or use the provided value (with fallback to "openai")
+        env_provider = os.environ.get("MODEL_PROVIDER", "openai").lower()
+        self.model_provider = model_provider.lower() if model_provider else env_provider
+        
+        # Get model names from environment variables or use the provided values (with appropriate defaults)
+        self.llm_model_name = llm_model_name or os.environ.get("LLM_MODEL", "gpt-4o")
+        self.embedding_model_name = embedding_model_name or os.environ.get("EMBEDDING_MODEL", "text-embedding-ada-002")
         self.temperature = temperature
         
         # Initialize LLM based on provider
