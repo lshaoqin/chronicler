@@ -190,95 +190,14 @@ class LLMService:
             HumanMessagePromptTemplate.from_template(
                 "Please analyze the following repository structure:\n\n"
                 "{structure}\n\n"
-                "Provide a summary of the repository organization, identify the main "
-                "components, and suggest any improvements to the structure. Format your "
-                "response in markdown."
+                "Provide a summary of the repository organization and identify the main "
+                "components. Your response will be used for documentation, so do not sound uncertain or "
+                "include any additional information or instructions. Format your response in markdown."
             )
         ])
         
         formatted_prompt = prompt.format_prompt(
             structure=json.dumps(structure, indent=2)
-        )
-        
-        response = self.llm.invoke(formatted_prompt.to_messages())
-        return self._extract_response_content(response)
-        
-    def suggest_documentation_improvements(self, current_docs: str, context: str) -> str:
-        """
-        Suggest improvements to existing documentation.
-        
-        Args:
-            current_docs: Current documentation content
-            context: Additional context about the repository
-            
-        Returns:
-            Suggested improvements
-        """
-        prompt = ChatPromptTemplate.from_messages([
-            SystemMessagePromptTemplate.from_template(
-                "You are a technical documentation expert. Your task is to suggest "
-                "improvements to existing documentation for a software project. "
-                "Focus ONLY on improving the documentation itself, not the code or repository structure. "
-                "Provide insights about why certain documentation decisions were made when possible."
-            ),
-            HumanMessagePromptTemplate.from_template(
-                "Here is the current documentation:\n\n{current_docs}\n\n"
-                "Here is additional context about the repository:\n\n{context}\n\n"
-                "Please suggest specific improvements to the DOCUMENTATION ONLY. Consider:\n"
-                "1. Missing information that should be added to the documentation\n"
-                "2. Unclear sections in the documentation that should be clarified\n"
-                "3. Better organization or structure for the documentation\n"
-                "4. Examples or tutorials that would enhance the documentation\n"
-                "5. Insights about why certain documentation decisions were made (if possible)\n\n"
-                "DO NOT suggest changes to the code, architecture, or repository structure. "
-                "Focus ONLY on improving the documentation itself. "
-                "Format your response in markdown and provide specific suggestions "
-                "with examples where appropriate."
-            )
-        ])
-        
-        formatted_prompt = prompt.format_prompt(
-            current_docs=current_docs,
-            context=context
-        )
-        
-        response = self.llm.invoke(formatted_prompt.to_messages())
-        return self._extract_response_content(response)
-        
-    def regenerate_documentation(self, original_docs: str, context: str) -> str:
-        """
-        Regenerate documentation with improvements while preserving unchanged sections.
-        
-        Args:
-            original_docs: Original documentation content
-            context: Additional context about the repository
-            
-        Returns:
-            Regenerated documentation with improvements
-        """
-        prompt = ChatPromptTemplate.from_messages([
-            SystemMessagePromptTemplate.from_template(
-                "You are a documentation expert. Your task is to improve existing documentation "
-                "while preserving sections that don't need changes. Focus ONLY on "
-                "documentation improvements, not code or structure changes. Include insights "
-                "about why certain documentation decisions were made when possible."
-            ),
-            HumanMessagePromptTemplate.from_template(
-                "Here is the current documentation:\n```\n{original_docs}\n```\n\n"
-                "Here is additional context about the repository:\n\n{context}\n\n"
-                "Please create an improved version of the documentation with the following guidelines:\n"
-                "1. Leave sections that don't need changes completely untouched\n"
-                "2. Improve sections that need enhancement or clarification\n"
-                "3. Add missing information where necessary\n"
-                "4. Ensure the documentation is well-structured and follows a logical flow\n"
-                "5. Where possible, provide insights regarding design decisions in the code\n\n"
-                "Output ONLY the complete improved documentation in markdown format."
-            )
-        ])
-        
-        formatted_prompt = prompt.format_prompt(
-            original_docs=original_docs,
-            context=context
         )
         
         response = self.llm.invoke(formatted_prompt.to_messages())
@@ -336,40 +255,3 @@ class LLMService:
                         break
             return files[:5]  # Return at most 5 files
             
-    def _generate_improved_docs(self, current_docs: str, suggestions: str) -> str:
-        """
-        Generate an improved version of the documentation based on suggestions.
-        
-        Args:
-            current_docs: Current documentation
-            suggestions: Improvement suggestions
-            
-        Returns:
-            Improved documentation with focus on documentation quality only
-        """
-        prompt = f"""
-        Here is the current documentation:
-        
-        ```
-        {current_docs}
-        ```
-        
-        Here are suggestions for improvement:
-        
-        ```
-        {suggestions}
-        ```
-        
-        Please create an improved version of the documentation that incorporates these suggestions.
-        Focus ONLY on improving the documentation itself, not suggesting code or structure changes.
-        Include insights about why certain documentation decisions were made when appropriate.
-        Only output the improved documentation content in markdown format, nothing else.
-        """
-        
-        # Use the LLM to generate the improved version
-        improved = self.llm.invoke([
-            {"role": "system", "content": "You are a documentation expert. Your task is to improve existing documentation based on suggestions. Focus ONLY on documentation improvements, not code or structure changes. Provide insights about why certain documentation decisions were made when possible."},
-            {"role": "user", "content": prompt}
-        ])
-        
-        return self._extract_response_content(improved)

@@ -3,13 +3,10 @@ Documentation generator module.
 """
 
 import os
-import difflib
 import time
-from typing import List, Any, Optional
+from typing import Optional, List
 from pathlib import Path
 from rich.console import Console
-from rich.syntax import Syntax
-from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeElapsedColumn
 
 from repository import Repository
@@ -86,14 +83,6 @@ class DocumentationGenerator:
             metadata={"type": "project_overview", "priority": 1}
         )
         self.doc_storage.save_section(overview_section)
-        
-        # Save repository structure overview
-        structure_section = DocSection(
-            file_path="__structure_overview__",
-            content=f"# Repository Structure\n\n{structure_analysis}",
-            metadata={"type": "structure_overview", "priority": 2}
-        )
-        self.doc_storage.save_section(structure_section)
         
         # Get all relevant files for documentation
         files_to_process = []
@@ -218,7 +207,6 @@ class DocumentationGenerator:
         # Get context for the file
         context = self.rag_system.get_file_context(file_path)
         
-        # Create a prompt that explicitly instructs not to include improvement suggestions
         prompt = f"""
         Generate comprehensive documentation for the following file: {file_path}
         
@@ -241,8 +229,6 @@ class DocumentationGenerator:
         - DO NOT mention what "could be" or "should be" done differently
         - ONLY describe what exists in the codebase as it is currently implemented
         - FOCUS EXCLUSIVELY on factual description and explanation
-        
-        The documentation will be rejected if it contains any improvement suggestions or critiques.
         """
         
         # Generate documentation using the custom prompt
@@ -328,7 +314,6 @@ class DocumentationGenerator:
         
         # Start with repository structure analysis
         structure = self.repository.get_directory_structure()
-        structure_analysis = self.llm_service.analyze_repository_structure(structure)
         
         # Get relevant files for documentation
         python_files = self.repository.get_files_by_extension('.py')
@@ -337,7 +322,6 @@ class DocumentationGenerator:
         sections = [
             "# Repository Documentation\n\n",
             "## Overview\n\n",
-            structure_analysis,
             "\n\n## Key Components\n\n"
         ]
         
@@ -361,144 +345,6 @@ class DocumentationGenerator:
         
         # Combine all sections
         return "".join(sections)
-    
-    def suggest_improvements(self) -> str:
-        """
-        Suggest improvements to the existing documentation.
-        
-        Returns:
-            Suggestions as a string
-        """
-        # Get current README content
-        current_docs = self.repository.readme_content
-        
-        if not current_docs:
-            return "No existing README.md found to suggest improvements for."
-        
-        # Get context from repository
-        context = ""
-        
-        # Get context from key files
-        python_files = self.repository.get_files_by_extension('.py')
-        for file_path in python_files[:5]:  # Limit to 5 files
-            try:
-                file_context = self.rag_system.get_file_context(file_path)
-                context += f"\n\n## {file_path}\n\n{file_context}"
-            except Exception:
-                pass
-        
-        # Generate suggestions
-        suggestions = self.llm_service.suggest_documentation_improvements(current_docs, context)
-        
-        # Regenerate documentation with improvements
-        improved_docs = self.llm_service.regenerate_documentation(current_docs, context)
-        
-        # Generate diff using cydifflib
-        diff_html = self._generate_diff_html(current_docs, improved_docs)
-        
-        return f"""# Documentation Improvement Suggestions
-
-## Current Documentation Analysis
-
-{suggestions}
-
-## Diff Between Original and Improved Documentation
-
-{diff_html}
-
-## Improved Documentation
-
-```markdown
-{improved_docs}
-```
-"""
-    
-    def _generate_diff_html(self, original_docs: str, improved_docs: str) -> str:
-        """
-        Generate HTML diff between original and improved documentation using cydifflib.
-        
-        Args:
-            original_docs: Original documentation content
-            improved_docs: Improved documentation content
-            
-        Returns:
-            HTML diff as a string
-        """
-        import cydifflib
-        from pygments import highlight
-        from pygments.lexers import DiffLexer
-        from pygments.formatters import HtmlFormatter
-        import html
-        
-        # Split the documents into lines
-        original_lines = original_docs.splitlines()
-        improved_lines = improved_docs.splitlines()
-        
-        # Generate unified diff
-        diff = cydifflib.unified_diff(
-            original_lines,
-            improved_lines,
-            lineterm='',
-            fromfile='Original Documentation',
-            tofile='Improved Documentation',
-            n=3  # Context lines
-        )
-        
-        # Convert diff to string
-        diff_text = '\n'.join(list(diff))
-        
-        # Highlight the diff using Pygments
-        formatter = HtmlFormatter(style='colorful')
-        highlighted_diff = highlight(diff_text, DiffLexer(), formatter)
-        
-        # Add CSS for the diff
-        css = formatter.get_style_defs('.highlight')
-        
-        # Create the HTML output
-        html_diff = f"""
-        <style>
-        {css}
-        .diff-container {{
-            font-family: monospace;
-            white-space: pre-wrap;
-            margin: 20px 0;
-            padding: 10px;
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            background-color: #f8f8f8;
-        }}
-        </style>
-        <div class="diff-container">
-        {highlighted_diff}
-        </div>
-        """
-        
-        return html_diff
-    
-    def display_diff(self, original: str, improved: str) -> None:
-        """
-        Display a diff between original and improved documentation in the console.
-        
-        Args:
-            original: Original documentation
-            improved: Improved documentation
-        """
-        diff = difflib.unified_diff(
-            original.splitlines(),
-            improved.splitlines(),
-            lineterm='',
-            n=3
-        )
-        
-        diff_text = '\n'.join(diff)
-        
-        syntax = Syntax(diff_text, "diff", theme="monokai", line_numbers=True)
-        
-        self.console.print(Panel(
-            syntax,
-            title="Documentation Diff",
-            border_style="green"
-        ))
     
     def _extract_repo_name(self, repo_url_or_path: str) -> str:
         """Extract repository name from URL or path."""
@@ -582,7 +428,7 @@ class DocumentationGenerator:
                 
         # Generate the overview using LLM
         prompt = f"""
-        Create a comprehensive high-level overview of this project based on the following information.
+        Create a comprehensive high-level overview documentation of this project based on the following information.
         Focus on explaining the project's purpose, architecture, and how components work together.
         
         Repository structure analysis:
@@ -591,7 +437,7 @@ class DocumentationGenerator:
         Key files content:
         {context}
         
-        Your overview should include ONLY these sections:
+        Your documentation should include ONLY these sections:
         1. Project Purpose and Main Functionality
         2. Architecture Overview (with component relationships)
         3. Key Workflows and Processes
