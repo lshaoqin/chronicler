@@ -227,15 +227,22 @@ class DocumentationGenerator:
         {context}
         ```
         
-        Your documentation should include:
+        Your documentation should include ONLY these sections:
         1. A clear description of the file's purpose and functionality
         2. Key components, classes, and functions
         3. How this file interacts with other parts of the system
         
         Format the output as markdown with appropriate headings and code examples where relevant.
         
-        IMPORTANT: Your documentation should be purely factual and descriptive. Do NOT include any suggestions for improvement, 
-        recommendations for changes, or critiques of the code. Focus only on describing what exists, not what could or should be changed.
+        CRITICAL INSTRUCTION: This is PURE DOCUMENTATION, not a code review. 
+        - DO NOT include ANY sections titled "Improvement Suggestions", "Recommendations", or similar
+        - DO NOT suggest any changes or improvements to the codebase
+        - DO NOT critique the code quality, organization, or structure
+        - DO NOT mention what "could be" or "should be" done differently
+        - ONLY describe what exists in the codebase as it is currently implemented
+        - FOCUS EXCLUSIVELY on factual description and explanation
+        
+        The documentation will be rejected if it contains any improvement suggestions or critiques.
         """
         
         # Generate documentation using the custom prompt
@@ -584,7 +591,7 @@ class DocumentationGenerator:
         Key files content:
         {context}
         
-        Your overview should include:
+        Your overview should include ONLY these sections:
         1. Project Purpose and Main Functionality
         2. Architecture Overview (with component relationships)
         3. Key Workflows and Processes
@@ -594,8 +601,15 @@ class DocumentationGenerator:
         Start with a main heading '# Project Overview' followed by relevant subheadings.
         Make sure the overview is comprehensive but concise, focusing on the most important aspects of the project.
         
-        IMPORTANT: Your documentation should be purely factual and descriptive. Do NOT include any suggestions for improvement, 
-        recommendations for changes, or critiques of the codebase. Focus only on describing what exists, not what could or should be changed.
+        CRITICAL INSTRUCTION: This is PURE DOCUMENTATION, not a code review. 
+        - DO NOT include ANY sections titled "Improvement Suggestions", "Recommendations", or similar
+        - DO NOT suggest any changes or improvements to the codebase
+        - DO NOT critique the code quality, organization, or structure
+        - DO NOT mention what "could be" or "should be" done differently
+        - ONLY describe what exists in the codebase as it is currently implemented
+        - FOCUS EXCLUSIVELY on factual description and explanation
+        
+        The documentation will be rejected if it contains any improvement suggestions or critiques.
         """
         
         # Generate overview using LLM
