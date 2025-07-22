@@ -208,7 +208,7 @@ class DocumentationGenerator:
         context = self.rag_system.get_file_context(file_path)
         
         prompt = f"""
-        Generate comprehensive documentation for the following file: {file_path}
+        Generate documentation for the following file: {file_path}
         
         File context:
         ```
@@ -217,7 +217,7 @@ class DocumentationGenerator:
         
         Your documentation should include ONLY these sections:
         1. A clear description of the file's purpose and functionality
-        2. Key components, classes, and functions
+        2. Key components, classes, and functions. Do not quote code unless necessary.
         3. How this file interacts with other parts of the system
         
         Format the output as markdown with appropriate headings and code examples where relevant.
@@ -336,6 +336,10 @@ class DocumentationGenerator:
             
         # Skip cache files and directories
         if '__pycache__' in file_path or file_path.endswith('.pyc'):
+            return True
+            
+        # Skip README files
+        if os.path.basename(file_path).lower() == 'readme.md':
             return True
             
         return False
