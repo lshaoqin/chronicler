@@ -3,11 +3,13 @@ Vector database configuration and connection management.
 """
 
 import os
-from typing import Dict, Any, Optional, Union
+from typing import Dict, Any
 from langchain.embeddings.base import Embeddings
 from langchain_community.vectorstores import FAISS
 from langchain.vectorstores.base import VectorStore
+from dotenv import load_dotenv
 
+load_dotenv()
 
 class VectorDBConfig:
     """Configuration and connection management for vector databases."""
