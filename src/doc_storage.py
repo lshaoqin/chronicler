@@ -204,8 +204,31 @@ class DocumentationStorage:
         if not sections:
             return f"# Repository Documentation (Generated: {self.timestamp})\n\nNo documentation sections found."
             
-        # Sort sections by file path
-        sorted_sections = sorted(sections.items(), key=lambda x: x[0])
+        # Get current date and time for documentation header
+        generation_time = time.strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Build the documentation starting with the header
+        doc_parts = [f"# Repository Documentation\n\n**Generated: {generation_time}**\n\n"]
+        
+        # First, add the project overview section if it exists
+        if "__project_overview__" in sections:
+            doc_parts.append(sections["__project_overview__"].content)
+            doc_parts.append("\n\n")
+            # Remove from sections so it doesn't get added again
+            del sections["__project_overview__"]
+            
+        # Next, add the structure overview if it exists
+        if "__structure_overview__" in sections:
+            doc_parts.append(sections["__structure_overview__"].content)
+            doc_parts.append("\n\n")
+            # Remove from sections so it doesn't get added again
+            del sections["__structure_overview__"]
+        
+        # Filter out special sections (those starting with __)
+        regular_sections = {k: v for k, v in sections.items() if not k.startswith("__")}
+        
+        # Sort regular sections by file path
+        sorted_sections = sorted(regular_sections.items(), key=lambda x: x[0])
         
         # Group sections by directory
         grouped_sections = {}
@@ -218,34 +241,40 @@ class DocumentationStorage:
                 grouped_sections[dir_path] = []
                 
             grouped_sections[dir_path].append((file_path, section))
-            
-        # Get current date and time for documentation header
-        generation_time = time.strftime("%Y-%m-%d %H:%M:%S")
-            
-        # Build the documentation
-        doc_parts = [f"# Repository Documentation\n\n**Generated: {generation_time}**\n\n"]
         
-        # Add a table of contents
-        doc_parts.append("## Table of Contents\n\n")
-        for dir_path in sorted(grouped_sections.keys()):
-            dir_name = os.path.basename(dir_path) or "Root"
-            doc_parts.append(f"- [{dir_name}](#{''.join(dir_name.lower().split())})\n")
-            for file_path, _ in grouped_sections[dir_path]:
-                file_name = os.path.basename(file_path)
-                doc_parts.append(f"  - [{file_name}](#{file_name.lower().replace('.', '-')})\n")
-        
-        doc_parts.append("\n")
-        
-        # Add each section
-        for dir_path in sorted(grouped_sections.keys()):
-            dir_name = os.path.basename(dir_path) or "Root"
-            doc_parts.append(f"## {dir_name}\n\n")
+        # Add a table of contents for regular sections
+        if grouped_sections:
+            doc_parts.append("## Table of Contents\n\n")
+            for dir_path in sorted(grouped_sections.keys()):
+                dir_name = os.path.basename(dir_path) or "Root"
+                doc_parts.append(f"- [{dir_name}](#{{''.join(dir_name.lower().split())}})\n")
+                for file_path, _ in grouped_sections[dir_path]:
+                    file_name = os.path.basename(file_path)
+                    doc_parts.append(f"  - [{file_name}](#{file_name.lower().replace('.', '-')})\n")
             
-            for file_path, section in grouped_sections[dir_path]:
-                file_name = os.path.basename(file_path)
-                doc_parts.append(f"### {file_name}\n\n")
-                doc_parts.append(section.content)
-                doc_parts.append("\n\n")
+            doc_parts.append("\n")
+            
+            # Add each regular section grouped by directory
+            for dir_path in sorted(grouped_sections.keys()):
+                dir_name = os.path.basename(dir_path) or "Root"
+                doc_parts.append(f"## {dir_name}\n\n")
+                
+                for file_path, section in grouped_sections[dir_path]:
+                    file_name = os.path.basename(file_path)
+                    doc_parts.append(f"### {file_name}\n\n")
+                    doc_parts.append(section.content)
+                    doc_parts.append("\n\n")
+        
+        # Add any remaining special sections (except the ones we already added)
+        special_sections = {k: v for k, v in sections.items() 
+                          if k.startswith("__") and k not in ["__project_overview__", "__structure_overview__"]}
+        
+        for file_path, section in sorted(special_sections.items(), key=lambda x: x[0]):
+            # Use a clean section name without the __ prefix/suffix
+            section_name = file_path.strip("_").replace("_", " ").title()
+            doc_parts.append(f"## {section_name}\n\n")
+            doc_parts.append(section.content)
+            doc_parts.append("\n\n")
                 
         return "".join(doc_parts)
         

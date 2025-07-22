@@ -77,18 +77,32 @@ class DocumentationGenerator:
         structure = self.repository.get_directory_structure()
         structure_analysis = self.llm_service.analyze_repository_structure(structure)
         
-        # Save repository overview
+        # Generate a high-level project overview
+        project_overview = self._generate_project_overview(structure_analysis)
+        
+        # Save high-level project overview
         overview_section = DocSection(
-            file_path="__overview__",
-            content=f"# Repository Overview\n\n{structure_analysis}",
-            metadata={"type": "overview"}
+            file_path="__project_overview__",
+            content=project_overview,
+            metadata={"type": "project_overview", "priority": 1}
         )
         self.doc_storage.save_section(overview_section)
+        
+        # Save repository structure overview
+        structure_section = DocSection(
+            file_path="__structure_overview__",
+            content=f"# Repository Structure\n\n{structure_analysis}",
+            metadata={"type": "structure_overview", "priority": 2}
+        )
+        self.doc_storage.save_section(structure_section)
         
         # Get all relevant files for documentation
         files_to_process = []
         for ext in file_extensions:
             files_to_process.extend(self.repository.get_files_by_extension(ext))
+            
+        # Filter out less useful files like __init__.py
+        files_to_process = [f for f in files_to_process if not self._should_skip_file(f)]
         
         # Process files incrementally with progress bar
         with Progress(
@@ -456,18 +470,117 @@ class DocumentationGenerator:
     
     def _extract_repo_name(self, repo_url_or_path: str) -> str:
         """Extract repository name from URL or path."""
-        # Handle GitHub URLs
-        if repo_url_or_path.startswith(('http://', 'https://', 'git@')):
-            # Remove .git extension if present
-            if repo_url_or_path.endswith('.git'):
-                repo_url_or_path = repo_url_or_path[:-4]
-                
-            # Extract repo name from URL
-            parts = repo_url_or_path.split('/')
-            return parts[-1].split('.')[0]  # Get the last part and remove any extension
+        if repo_url_or_path.endswith('/'):
+            repo_url_or_path = repo_url_or_path[:-1]
+            
+        if '/' in repo_url_or_path:
+            return repo_url_or_path.split('/')[-1]
         else:
-            # For local paths, use the directory name
             return os.path.basename(os.path.abspath(repo_url_or_path))
+            
+    def _should_skip_file(self, file_path: str) -> bool:
+        """
+        Determine if a file should be skipped in documentation generation.
+        
+        Args:
+            file_path: Path to the file
+            
+        Returns:
+            True if the file should be skipped, False otherwise
+        """
+        # Skip __init__.py files
+        if os.path.basename(file_path) == '__init__.py':
+            return True
+            
+        # Skip test files
+        if '/tests/' in file_path or file_path.endswith('_test.py') or file_path.endswith('test_.py'):
+            return True
+            
+        # Skip configuration files
+        if os.path.basename(file_path) in ['.gitignore', '.env', '.env.example', 'pyproject.toml', 'setup.cfg']:
+            return True
+            
+        # Skip cache files and directories
+        if '__pycache__' in file_path or file_path.endswith('.pyc'):
+            return True
+            
+        return False
+            
+    def _generate_project_overview(self, structure_analysis: str) -> str:
+        """
+        Generate a high-level project overview.
+        
+        Args:
+            structure_analysis: Analysis of the repository structure
+            
+        Returns:
+            High-level project overview as a string
+        """
+        # Get key files for context
+        key_files = []
+        
+        # Try to find important files in the repository
+        for file_path in self.repository.get_files_by_extension('.py'):
+            if file_path.endswith('main.py') or \
+               'app.py' in file_path or \
+               'core.py' in file_path or \
+               file_path.endswith('__main__.py'):
+                key_files.append(file_path)
+        
+        # If we didn't find any key files, get the first few Python files
+        if not key_files:
+            key_files = self.repository.get_files_by_extension('.py')[:5]
+        
+        # Get README if it exists
+        readme_files = [f for f in self.repository.get_files_by_extension('.md') 
+                       if os.path.basename(f).lower() == 'readme.md']
+        if readme_files:
+            key_files.append(readme_files[0])
+                
+        # Build context from key files
+        context = ""
+        for file_path in key_files:
+            try:
+                file_content = self.repository.get_file_content(file_path)
+                # Limit content length to avoid token limits
+                content_preview = file_content[:500] + "..." if len(file_content) > 500 else file_content
+                context += f"\n\n## {file_path}\n```\n{content_preview}\n```\n"
+            except Exception as e:
+                self.console.print(f"[yellow]Warning: Could not read {file_path}: {str(e)}[/yellow]")
+                
+        # Generate the overview using LLM
+        prompt = f"""
+        Create a comprehensive high-level overview of this project based on the following information.
+        Focus on explaining the project's purpose, architecture, and how components work together.
+        
+        Repository structure analysis:
+        {structure_analysis}
+        
+        Key files content:
+        {context}
+        
+        Your overview should include:
+        1. Project Purpose and Main Functionality
+        2. Architecture Overview (with component relationships)
+        3. Key Workflows and Processes
+        4. Technology Stack
+        
+        Format the output as a well-structured markdown document with appropriate headings.
+        Start with a main heading '# Project Overview' followed by relevant subheadings.
+        Make sure the overview is comprehensive but concise, focusing on the most important aspects of the project.
+        """
+        
+        # Generate overview using LLM
+        self.console.print("[bold]Generating project overview...[/bold]")
+        overview_response = self.llm_service.llm.invoke([
+            {"role": "system", "content": "You are a technical documentation expert. Your task is to create a high-level project overview that explains the architecture and functionality of a software project."},
+            {"role": "user", "content": prompt}
+        ])
+        
+        # Extract content from response
+        overview_content = self.llm_service._extract_response_content(overview_response)
+        
+        return overview_content
     
     def save_documentation(self, content: str, output_path: str) -> None:
         """Save documentation to a file."""
