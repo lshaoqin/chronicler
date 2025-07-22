@@ -5,9 +5,8 @@ Documentation generator module.
 import os
 import difflib
 import time
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Any, Optional
 from pathlib import Path
-import yaml
 from rich.console import Console
 from rich.syntax import Syntax
 from rich.panel import Panel
@@ -219,8 +218,34 @@ class DocumentationGenerator:
         # Get context for the file
         context = self.rag_system.get_file_context(file_path)
         
-        # Generate documentation for the file
-        file_doc = self.llm_service.generate_documentation(context, file_path)
+        # Create a prompt that explicitly instructs not to include improvement suggestions
+        prompt = f"""
+        Generate comprehensive documentation for the following file: {file_path}
+        
+        File context:
+        ```
+        {context}
+        ```
+        
+        Your documentation should include:
+        1. A clear description of the file's purpose and functionality
+        2. Key components, classes, and functions
+        3. How this file interacts with other parts of the system
+        
+        Format the output as markdown with appropriate headings and code examples where relevant.
+        
+        IMPORTANT: Your documentation should be purely factual and descriptive. Do NOT include any suggestions for improvement, 
+        recommendations for changes, or critiques of the code. Focus only on describing what exists, not what could or should be changed.
+        """
+        
+        # Generate documentation using the custom prompt
+        response = self.llm_service.llm.invoke([
+            {"role": "system", "content": "You are a technical documentation expert. Your task is to create clear, factual documentation for a code file."},
+            {"role": "user", "content": prompt}
+        ])
+        
+        # Extract content from response
+        file_doc = self.llm_service._extract_response_content(response)
         
         return file_doc
     
@@ -568,6 +593,9 @@ class DocumentationGenerator:
         Format the output as a well-structured markdown document with appropriate headings.
         Start with a main heading '# Project Overview' followed by relevant subheadings.
         Make sure the overview is comprehensive but concise, focusing on the most important aspects of the project.
+        
+        IMPORTANT: Your documentation should be purely factual and descriptive. Do NOT include any suggestions for improvement, 
+        recommendations for changes, or critiques of the codebase. Focus only on describing what exists, not what could or should be changed.
         """
         
         # Generate overview using LLM
