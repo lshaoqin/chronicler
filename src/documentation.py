@@ -453,6 +453,45 @@ class DocumentationGenerator:
             # Fallback: use section name as summary
             return f"Section containing files and functionality related to {section_doc.split()[0].lower() if section_doc else 'this module'}"
     
+    def _load_existing_documentation(self) -> None:
+        """
+        Load existing documentation directly from the repository's README.md file.
+        This allows update operations to preserve existing documentation while
+        only updating sections for changed files.
+        """
+        try:
+            # Look for README.md in the repository root
+            readme_path = os.path.join(self.repository.repo_path, "README.md")
+            
+            if not os.path.exists(readme_path):
+                self.console.print("[yellow]No existing README.md found. Starting fresh.[/yellow]")
+                return
+            
+            # Read the existing README content
+            with open(readme_path, 'r', encoding='utf-8') as f:
+                existing_readme = f.read()
+            
+            if not existing_readme.strip():
+                self.console.print("[yellow]README.md is empty. Starting fresh.[/yellow]")
+                return
+            
+            self.console.print("[blue]Loading existing documentation from README.md[/blue]")
+            
+            # Store the existing README as a special section that will be used as the base
+            # We'll create a special section to hold the existing content
+            from doc_storage import DocSection
+            existing_section = DocSection(
+                file_path="__existing_readme__",
+                content=existing_readme,
+                metadata={"type": "existing_readme", "source": "README.md"}
+            )
+            self.doc_storage.save_section(existing_section)
+            
+            self.console.print("[green]Loaded existing README.md content[/green]")
+            
+        except Exception as e:
+            self.console.print(f"[yellow]Could not load existing README.md: {str(e)}. Starting fresh.[/yellow]")
+    
     def update_documentation(self, commit_hash: Optional[str] = None) -> str:
         """
         Update documentation based on changes in a git commit.
@@ -463,6 +502,9 @@ class DocumentationGenerator:
         Returns:
             Updated documentation as a string
         """
+        # First, try to load existing documentation from the most recent run
+        self._load_existing_documentation()
+        
         # Get commit summary
         commit_summary = self.repository.get_commit_summary(commit_hash)
         self.console.print(f"Analyzing commit: {commit_summary['short_hash']} - {commit_summary['message']}")
@@ -474,44 +516,376 @@ class DocumentationGenerator:
             self.console.print("[yellow]No relevant files changed in this commit.[/yellow]")
             return self.doc_storage.generate_full_documentation()
         
-        # Process changed files with progress bar
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[bold blue]{task.description}"),
-            BarColumn(),
-            TextColumn("[bold]{task.completed}/{task.total}"),
-            TimeElapsedColumn()
-        ) as progress:
-            task = progress.add_task("Processing changed files...", total=len(changed_files))
+        # Check if we have existing README content to work with
+        existing_sections = self.doc_storage.get_all_sections()
+        has_existing_readme = "__existing_readme__" in existing_sections
+        
+        if has_existing_readme:
+            # Use smart update approach: preserve existing README and update only changed sections
+            existing_readme = existing_sections["__existing_readme__"].content
+            updated_readme = self._update_readme_selectively(existing_readme, changed_files, commit_hash)
             
-            for file_path in changed_files:
-                progress.update(task, description=f"Processing {file_path}")
+            # Save the updated README
+            self.save_documentation(updated_readme, os.path.join(self.output_dir, "README.md"))
+            
+            return updated_readme
+        else:
+            # No existing README, throw error
+            raise ValueError("No existing README found. Please run the `create` command to create a README first.")
+    
+    def _update_readme_selectively(self, existing_readme: str, changed_files: List[str], commit_hash: Optional[str] = None) -> str:
+        """
+        Update the existing README by using RAG to find relevant sections and updating only those sections.
+        
+        Args:
+            existing_readme: The current README content
+            changed_files: List of files that have changed
+            commit_hash: The commit hash being processed
+            
+        Returns:
+            Updated README content with only relevant sections modified
+        """
+        self.console.print(f"[blue]Using RAG to selectively update README for {len(changed_files)} changed files[/blue]")
+        
+        # Filter significant files
+        significant_files = [f for f in changed_files if not self._should_skip_file(f)]
+        
+        if not significant_files:
+            self.console.print("[yellow]No significant files changed. Preserving existing README.[/yellow]")
+            return existing_readme
+        
+        self.console.print(f"[blue]Found {len(significant_files)} significant files to analyze[/blue]")
+        
+        # Step 1: Parse the existing README into sections
+        readme_sections = self._parse_readme_sections(existing_readme)
+        self.console.print(f"[blue]Parsed {len(readme_sections)} sections from existing README[/blue]")
+        
+        # Step 2: For each changed file, use RAG to find relevant sections
+        sections_to_update = set()
+        file_changes_context = {}
+        
+        for file_path in significant_files:
+            try:
+                # Get the changes for this file
+                old_content, new_content = self.repository.get_file_diff(file_path, commit_hash)
                 
-                try:
-                    # Get old and new content
-                    old_content, new_content = self.repository.get_file_diff(file_path, commit_hash)
+                if new_content:  # File exists (not deleted)
+                    # Create context about what changed
+                    change_context = f"File: {file_path}\nChanges: {self._summarize_file_changes(old_content, new_content)}"
+                    file_changes_context[file_path] = {
+                        'old_content': old_content,
+                        'new_content': new_content,
+                        'change_context': change_context
+                    }
                     
-                    # If file was deleted
-                    if not new_content:
-                        self.doc_storage.delete_section(file_path)
-                        progress.update(task, advance=1)
-                        continue
+                    # Use RAG to find relevant sections
+                    relevant_sections = self._find_relevant_sections_with_rag(change_context, readme_sections)
+                    sections_to_update.update(relevant_sections)
                     
-                    # Update documentation for the file
-                    self._update_file_documentation(file_path, old_content, new_content)
+                    self.console.print(f"[blue]File {file_path} affects {len(relevant_sections)} sections[/blue]")
                     
-                except Exception as e:
-                    self.console.print(f"[red]Error processing {file_path}: {str(e)}[/red]")
-                    
-                progress.update(task, advance=1)
+            except Exception as e:
+                self.console.print(f"[red]Error analyzing {file_path}: {str(e)}[/red]")
         
-        # Generate the full documentation
-        full_doc = self.doc_storage.generate_full_documentation()
+        if not sections_to_update:
+            self.console.print("[yellow]No relevant sections found to update. Preserving existing README.[/yellow]")
+            return existing_readme
         
-        # Save the full documentation
-        self.save_documentation(full_doc, os.path.join(self.output_dir, "README.md"))
+        self.console.print(f"[blue]Updating {len(sections_to_update)} sections based on file changes[/blue]")
         
-        return full_doc
+        # Step 3: Update only the relevant sections
+        updated_sections = {}
+        for section_key in sections_to_update:
+            try:
+                updated_content = self._update_section_with_context(
+                    readme_sections[section_key], 
+                    file_changes_context, 
+                    significant_files
+                )
+                updated_sections[section_key] = updated_content
+                self.console.print(f"[green]Updated section: {section_key}[/green]")
+            except Exception as e:
+                self.console.print(f"[red]Error updating section {section_key}: {str(e)}[/red]")
+        
+        # Step 4: Reconstruct the README with updated sections
+        updated_readme = self._reconstruct_readme(readme_sections, updated_sections)
+        
+        self.console.print(f"[green]Successfully updated {len(updated_sections)} sections in README[/green]")
+        return updated_readme
+    
+    def _parse_readme_sections(self, readme_content: str) -> Dict[str, str]:
+        """
+        Parse the README content into sections based on headers.
+        
+        Returns:
+            Dictionary mapping section keys to section content
+        """
+        sections = {}
+        lines = readme_content.split('\n')
+        current_section = None
+        current_content = []
+        
+        for line in lines:
+            # Check if this is a header line
+            if line.strip().startswith('#'):
+                # Save the previous section if it exists
+                if current_section is not None:
+                    sections[current_section] = '\n'.join(current_content).strip()
+                
+                # Start a new section
+                current_section = line.strip()
+                current_content = [line]
+            else:
+                # Add to current section
+                if current_section is not None:
+                    current_content.append(line)
+                else:
+                    # Content before any headers - treat as intro
+                    if 'intro' not in sections:
+                        sections['intro'] = line
+                    else:
+                        sections['intro'] += '\n' + line
+        
+        # Don't forget the last section
+        if current_section is not None:
+            sections[current_section] = '\n'.join(current_content).strip()
+        
+        return sections
+    
+    def _summarize_file_changes(self, old_content: Optional[str], new_content: str) -> str:
+        """
+        Create a summary of what changed in a file.
+        
+        Args:
+            old_content: Previous file content (None if new file)
+            new_content: Current file content
+            
+        Returns:
+            Summary of changes
+        """
+        if old_content is None:
+            return f"New file created with {len(new_content.splitlines())} lines"
+        
+        old_lines = old_content.splitlines() if old_content else []
+        new_lines = new_content.splitlines()
+        
+        # Simple change summary
+        lines_added = len(new_lines) - len(old_lines)
+        if lines_added > 0:
+            return f"File modified: {lines_added} lines added, {len(new_lines)} total lines"
+        elif lines_added < 0:
+            return f"File modified: {abs(lines_added)} lines removed, {len(new_lines)} total lines"
+        else:
+            return f"File modified: content changed, {len(new_lines)} lines"
+    
+    def _find_relevant_sections_with_rag(self, change_context: str, readme_sections: Dict[str, str]) -> List[str]:
+        """
+        Use RAG with existing vector database embeddings to find which README sections are relevant to the file changes.
+        
+        Args:
+            change_context: Description of what changed in the file
+            readme_sections: Dictionary of README sections
+            
+        Returns:
+            List of section keys that are relevant to the changes
+        """
+        if not readme_sections or not hasattr(self, 'rag_system') or not self.rag_system:
+            # Fallback to keyword matching if RAG system not available
+            return self._fallback_keyword_matching(change_context, readme_sections)
+        
+        try:
+            # Use the existing RAG system to search for relevant content using embeddings
+            # This leverages the already-built vector database with embeddings
+            relevant_docs = self.rag_system.search(change_context, k=5)  # Reduced from 10 to 5 for more precision
+            
+            # Extract the sources (file paths) from relevant documents with relevance scores
+            relevant_sources = set()
+            high_relevance_sources = set()
+            
+            for i, doc in enumerate(relevant_docs):
+                source = doc.metadata.get('source', '')
+                if source:
+                    relevant_sources.add(source)
+                    # Consider top 2 results as high relevance
+                    if i < 2:
+                        high_relevance_sources.add(source)
+            
+            # Now find which README sections are most similar to the change context
+            relevant_sections = []
+            
+            # For each README section, use more precise matching
+            for section_key, section_content in readme_sections.items():
+                section_lower = section_content.lower()
+                is_relevant = False
+                
+                # Method 1: Check for high-relevance sources with stricter matching
+                for source in high_relevance_sources:
+                    filename = os.path.basename(source).lower()
+                    
+                    # More precise matching - look for the filename in context, not just anywhere
+                    if (f"src/{filename}" in section_lower or 
+                        f"`{filename}`" in section_lower or 
+                        f"file: {filename}" in section_lower or
+                        f"module: {filename}" in section_lower):
+                        relevant_sections.append(section_key)
+                        is_relevant = True
+                        break
+                
+                # Method 2: Semantic similarity check with much higher threshold
+                if not is_relevant:
+                    try:
+                        # Use only the change context for search, not section content
+                        section_results = self.rag_system.search(change_context, k=3)
+                        
+                        # Check if this section's content appears in the top relevant results
+                        for result in section_results:
+                            result_content = result.page_content.lower()
+                            section_words = set(section_content.lower().split())
+                            result_words = set(result_content.split())
+                            
+                            # Much higher threshold for relevance - 40% overlap
+                            if section_words and result_words:
+                                overlap = len(section_words.intersection(result_words))
+                                overlap_ratio = overlap / min(len(section_words), len(result_words))
+                                
+                                # Only consider highly overlapping content as relevant
+                                if overlap_ratio > 0.4:  # Increased from 10% to 40%
+                                    relevant_sections.append(section_key)
+                                    is_relevant = True
+                                    break
+                    except Exception:
+                        # If semantic search fails, skip this method
+                        pass
+                
+                # Method 3: Check if the section specifically discusses the changed file's functionality
+                if not is_relevant:
+                    # Extract key terms from the change context
+                    change_terms = [term.lower() for term in change_context.split() if len(term) > 4]
+                    
+                    # Count how many change-specific terms appear in the section
+                    term_matches = sum(1 for term in change_terms if term in section_lower)
+                    
+                    # Only consider relevant if multiple specific terms match
+                    if term_matches >= 3 and len(change_terms) > 0:
+                        match_ratio = term_matches / len(change_terms)
+                        if match_ratio > 0.5:  # At least 50% of change terms must be present
+                            relevant_sections.append(section_key)
+            
+            # Remove duplicates while preserving order
+            seen = set()
+            unique_relevant = []
+            for section in relevant_sections:
+                if section not in seen:
+                    seen.add(section)
+                    unique_relevant.append(section)
+            
+            self.console.print(f"[blue]RAG found {len(unique_relevant)} relevant sections using embeddings[/blue]")
+            return unique_relevant
+            
+        except Exception as e:
+            self.console.print(f"[yellow]Error in RAG embeddings search: {str(e)}. Using fallback method.[/yellow]")
+            return self._fallback_keyword_matching(change_context, readme_sections)
+    
+    def _fallback_keyword_matching(self, change_context: str, readme_sections: Dict[str, str]) -> List[str]:
+        """
+        Fallback method using simple keyword matching when RAG is not available.
+        
+        Args:
+            change_context: Description of what changed
+            readme_sections: Dictionary of README sections
+            
+        Returns:
+            List of section keys that match keywords
+        """
+        relevant_sections = []
+        change_keywords = change_context.lower().split()
+        
+        for section_key, section_content in readme_sections.items():
+            section_text = section_content.lower()
+            # Check if any significant keywords from the change appear in the section
+            if any(keyword in section_text for keyword in change_keywords if len(keyword) > 3):
+                relevant_sections.append(section_key)
+        
+        self.console.print(f"[yellow]Fallback keyword matching found {len(relevant_sections)} relevant sections[/yellow]")
+        return relevant_sections
+    
+    def _update_section_with_context(self, section_content: str, file_changes_context: Dict, changed_files: List[str]) -> str:
+        """
+        Update a specific README section based on the context of file changes.
+        
+        Args:
+            section_content: Current content of the section
+            file_changes_context: Dictionary of file changes with context
+            changed_files: List of files that changed
+            
+        Returns:
+            Updated section content
+        """
+        try:
+            # Create context about all the changes
+            changes_summary = "\n".join([
+                f"- {file_path}: {context['change_context']}"
+                for file_path, context in file_changes_context.items()
+            ])
+            
+            # Use LLM to update the section intelligently
+            update_prompt = f"""
+            You are updating a section of technical documentation based on code changes.
+            
+            Current Section Content:
+            {section_content}
+            
+            File Changes:
+            {changes_summary}
+            
+            Please update this documentation section to reflect the changes while:
+            1. Preserving the existing structure and style
+            2. Only updating parts that are actually affected by the changes
+            3. Maintaining accuracy and clarity
+            4. Keeping the same markdown formatting
+            
+            If no updates are needed, return the original content unchanged.
+            
+            Updated Section:
+            """
+            
+            # Use the correct LLM invocation method
+            response = self.llm_service.llm.invoke([
+                {"role": "system", "content": "You are a technical documentation expert. Update documentation sections based on code changes while preserving structure and style."},
+                {"role": "user", "content": update_prompt}
+            ])
+            
+            # Extract content from response
+            updated_content = self.llm_service._extract_response_content(response)
+            return updated_content.strip()
+            
+        except Exception as e:
+            self.console.print(f"[yellow]Error updating section with LLM: {str(e)}. Preserving original.[/yellow]")
+            return section_content
+    
+    def _reconstruct_readme(self, original_sections: Dict[str, str], updated_sections: Dict[str, str]) -> str:
+        """
+        Reconstruct the README by combining original and updated sections.
+        
+        Args:
+            original_sections: Original README sections
+            updated_sections: Updated sections to replace
+            
+        Returns:
+            Complete reconstructed README
+        """
+        reconstructed_parts = []
+        
+        # Maintain the original order of sections
+        for section_key, original_content in original_sections.items():
+            if section_key in updated_sections:
+                # Use the updated version
+                reconstructed_parts.append(updated_sections[section_key])
+            else:
+                # Use the original version
+                reconstructed_parts.append(original_content)
+        
+        return '\n\n'.join(reconstructed_parts)
     
     def _generate_file_documentation(self, file_path: str, content: str) -> str:
         """
