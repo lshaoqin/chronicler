@@ -16,6 +16,7 @@ pygments>=2.16.1
 langchain-community>=0.3.27
 langchain-ollama>=0.0.1
 sentence-transformers>=2.2.2
+langchain-google-genai>=0.0.5  # For Google Gemini LLMs
 
 # Vector database dependencies (install as needed)
 pinecone-client>=2.2.1  # For Pinecone vector database

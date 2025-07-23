@@ -12,12 +12,20 @@ from langchain.prompts import ChatPromptTemplate, HumanMessagePromptTemplate, Sy
 from langchain.embeddings.base import Embeddings
 from langchain.chat_models.base import BaseChatModel
 
+# Import Gemini modules
+try:
+    from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
+    GEMINI_AVAILABLE = True
+except ImportError:
+    GEMINI_AVAILABLE = False
+
 
 class LLMService:
     """Service for interacting with language models."""
     
     def __init__(self, 
-                 model_provider: str = None,
+                 llm_provider: str = None,
+                 embedding_provider: str = None,
                  llm_model_name: str = None,
                  embedding_model_name: str = None,
                  temperature: float = 0.2):
@@ -25,18 +33,43 @@ class LLMService:
         Initialize the LLM service.
         
         Args:
-            model_provider: Provider of the model ("openai", "ollama", or "local"). If None, reads from MODEL_PROVIDER env var.
+            llm_provider: Provider for the LLM ("openai", "gemini", "ollama", or "local"). If None, reads from LLM_PROVIDER env var.
+            embedding_provider: Provider for embeddings ("openai", "gemini", "ollama", or "local"). If None, reads from EMBEDDING_PROVIDER env var.
             llm_model_name: Name of the LLM model to use. If None, reads from LLM_MODEL env var.
             embedding_model_name: Name of the embedding model to use. If None, reads from EMBEDDING_MODEL env var.
             temperature: Temperature for LLM generation (higher = more creative)
         """
-        # Get model provider from environment variable or use the provided value (with fallback to "openai")
-        env_provider = os.environ.get("MODEL_PROVIDER", "openai").lower()
-        self.model_provider = model_provider.lower() if model_provider else env_provider
+        # Get model providers from environment variables or use the provided values (with fallback to "openai")
+        env_llm_provider = os.environ.get("LLM_PROVIDER", os.environ.get("MODEL_PROVIDER", "openai")).lower()
+        env_embedding_provider = os.environ.get("EMBEDDING_PROVIDER", os.environ.get("MODEL_PROVIDER", "openai")).lower()
+        
+        self.llm_provider = llm_provider.lower() if llm_provider else env_llm_provider
+        self.embedding_provider = embedding_provider.lower() if embedding_provider else env_embedding_provider
+        
+        # Check if Gemini is requested but not available
+        if (self.llm_provider == "gemini" or self.embedding_provider == "gemini") and not GEMINI_AVAILABLE:
+            raise ImportError(
+                "Gemini support requested but langchain-google-genai package is not installed. "
+                "Please install it with 'pip install langchain-google-genai'."
+            )
         
         # Get model names from environment variables or use the provided values (with appropriate defaults)
-        self.llm_model_name = llm_model_name or os.environ.get("LLM_MODEL", "gpt-4o")
-        self.embedding_model_name = embedding_model_name or os.environ.get("EMBEDDING_MODEL", "text-embedding-ada-002")
+        # LLM model defaults based on provider
+        if self.llm_provider == "gemini":
+            self.llm_model_name = llm_model_name or os.environ.get("LLM_MODEL", "gemini-1.5-pro")
+        else:
+            self.llm_model_name = llm_model_name or os.environ.get("LLM_MODEL", "gpt-4o")
+            
+        # Embedding model defaults based on provider
+        if self.embedding_provider == "gemini":
+            self.embedding_model_name = embedding_model_name or os.environ.get("EMBEDDING_MODEL", "embedding-001")
+        elif self.embedding_provider == "openai":
+            self.embedding_model_name = embedding_model_name or os.environ.get("EMBEDDING_MODEL", "text-embedding-ada-002")
+        elif self.embedding_provider == "ollama" or self.embedding_provider == "local":
+            self.embedding_model_name = embedding_model_name or os.environ.get("EMBEDDING_MODEL", "llama2")
+        else:
+            self.embedding_model_name = embedding_model_name or os.environ.get("EMBEDDING_MODEL", "text-embedding-ada-002")
+            
         self.temperature = temperature
         
         # Initialize LLM based on provider
@@ -47,7 +80,7 @@ class LLMService:
     
     def _initialize_llm(self) -> BaseChatModel:
         """Initialize the appropriate LLM based on the provider."""
-        if self.model_provider == "openai":
+        if self.llm_provider == "openai":
             api_key = os.environ.get("OPENAI_API_KEY")
             if not api_key:
                 raise ValueError(
@@ -58,7 +91,19 @@ class LLMService:
                 temperature=self.temperature,
                 openai_api_key=api_key
             )
-        elif self.model_provider == "ollama":
+        elif self.llm_provider == "gemini":
+            api_key = os.environ.get("GOOGLE_API_KEY")
+            if not api_key:
+                raise ValueError(
+                    "Google API key not found. Please set the GOOGLE_API_KEY environment variable."
+                )
+            return ChatGoogleGenerativeAI(
+                model=self.llm_model_name,
+                temperature=self.temperature,
+                google_api_key=api_key,
+                convert_system_message_to_human=True  # Gemini requires this for system messages
+            )
+        elif self.llm_provider == "ollama":
             # Default Ollama host is localhost:11434
             ollama_host = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
             return ChatOllama(
@@ -66,7 +111,7 @@ class LLMService:
                 temperature=self.temperature,
                 base_url=ollama_host
             )
-        elif self.model_provider == "local":
+        elif self.llm_provider == "local":
             # For local models, we use Ollama as the backend
             ollama_host = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
             return ChatOllama(
@@ -75,11 +120,11 @@ class LLMService:
                 base_url=ollama_host
             )
         else:
-            raise ValueError(f"Unsupported model provider: {self.model_provider}")
+            raise ValueError(f"Unsupported LLM provider: {self.llm_provider}")
     
     def _initialize_embedding_model(self) -> Embeddings:
         """Initialize the appropriate embedding model based on the provider."""
-        if self.model_provider == "openai":
+        if self.embedding_provider == "openai":
             api_key = os.environ.get("OPENAI_API_KEY")
             if not api_key:
                 raise ValueError(
@@ -89,19 +134,29 @@ class LLMService:
                 model=self.embedding_model_name,
                 openai_api_key=api_key
             )
-        elif self.model_provider == "ollama":
+        elif self.embedding_provider == "gemini":
+            api_key = os.environ.get("GOOGLE_API_KEY")
+            if not api_key:
+                raise ValueError(
+                    "Google API key not found. Please set the GOOGLE_API_KEY environment variable."
+                )
+            return GoogleGenerativeAIEmbeddings(
+                model=self.embedding_model_name,
+                google_api_key=api_key
+            )
+        elif self.embedding_provider == "ollama":
             ollama_host = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
             return OllamaEmbeddings(
                 model=self.embedding_model_name,
                 base_url=ollama_host
             )
-        elif self.model_provider == "local":
+        elif self.embedding_provider == "local":
             # Use HuggingFace Sentence Transformers for local embeddings
             return HuggingFaceEmbeddings(
                 model_name=self.embedding_model_name or "all-MiniLM-L6-v2"
             )
         else:
-            raise ValueError(f"Unsupported model provider: {self.model_provider}")
+            raise ValueError(f"Unsupported embedding provider: {self.embedding_provider}")
     
     def get_embedding_model(self) -> Embeddings:
         """Get the embedding model."""
