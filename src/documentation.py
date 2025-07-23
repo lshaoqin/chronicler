@@ -706,6 +706,10 @@ class DocumentationGenerator:
             except Exception as e:
                 self.console.print(f"[yellow]Warning: Could not read {file_path}: {str(e)}[/yellow]")
                 
+        # Get installation and usage information
+        installation_info = self._extract_installation_info()
+        usage_info = self._extract_usage_info()
+        
         # Generate the overview using LLM
         prompt = f"""
         Create a comprehensive high-level overview documentation of this project based on the following information.
@@ -717,15 +721,34 @@ class DocumentationGenerator:
         Key files content:
         {context}
         
+        Installation information:
+        {installation_info}
+        
+        Usage information:
+        {usage_info}
+        
         Your documentation should include ONLY these sections:
         1. Project Purpose and Main Functionality
-        2. Architecture Overview (with component relationships)
-        3. Key Workflows and Processes
-        4. Technology Stack
+        2. Installation
+        3. Usage
+        4. Architecture Overview (with component relationships)
+        5. Key Workflows and Processes
+        6. Technology Stack
         
         Format the output as a well-structured markdown document with appropriate headings.
         Start with a main heading '# Project Overview' followed by relevant subheadings.
         Make sure the overview is comprehensive but concise, focusing on the most important aspects of the project.
+        
+        For the Installation section, include:
+        - Prerequisites (Python version, etc.)
+        - Step-by-step installation instructions
+        - Environment setup requirements
+        
+        For the Usage section, include:
+        - Basic command syntax
+        - Available commands and their purposes
+        - Common usage examples
+        - Important command-line options
         
         CRITICAL INSTRUCTION: This is PURE DOCUMENTATION, not a code review. 
         - DO NOT include ANY sections titled "Improvement Suggestions", "Recommendations", or similar
@@ -749,6 +772,128 @@ class DocumentationGenerator:
         overview_content = self.llm_service._extract_response_content(overview_response)
         
         return overview_content
+    
+    def _extract_installation_info(self) -> str:
+        """
+        Extract installation information from the repository.
+        
+        Returns:
+            Installation information as a formatted string
+        """
+        info = []
+        
+        # Check for requirements.txt
+        requirements_path = os.path.join(self.repository.repo_path, 'requirements.txt')
+        if os.path.exists(requirements_path):
+            try:
+                with open(requirements_path, 'r', encoding='utf-8') as f:
+                    requirements_content = f.read()
+                info.append(f"Requirements file found:\n```\n{requirements_content[:1000]}\n```")
+            except Exception as e:
+                info.append(f"Requirements file exists but could not be read: {str(e)}")
+        
+        # Check for setup.py
+        setup_path = os.path.join(self.repository.repo_path, 'setup.py')
+        if os.path.exists(setup_path):
+            info.append("Setup.py file found for package installation")
+        
+        # Check for pyproject.toml
+        pyproject_path = os.path.join(self.repository.repo_path, 'pyproject.toml')
+        if os.path.exists(pyproject_path):
+            info.append("pyproject.toml file found for modern Python packaging")
+        
+        # Check for package.json (for Node.js projects)
+        package_json_path = os.path.join(self.repository.repo_path, 'package.json')
+        if os.path.exists(package_json_path):
+            info.append("package.json file found for Node.js dependencies")
+        
+        # Check for .env.example or similar
+        env_files = ['.env.example', '.env.template', '.env.sample']
+        for env_file in env_files:
+            env_path = os.path.join(self.repository.repo_path, env_file)
+            if os.path.exists(env_path):
+                info.append(f"Environment template file found: {env_file}")
+                break
+        
+        return "\n".join(info) if info else "No specific installation files found."
+    
+    def _extract_usage_info(self) -> str:
+        """
+        Extract usage information from the repository, particularly from main.py and CLI definitions.
+        
+        Returns:
+            Usage information as a formatted string
+        """
+        info = []
+        
+        # Look for main.py or app.py
+        main_files = ['main.py', 'app.py', '__main__.py']
+        main_content = None
+        main_file_found = None
+        
+        for main_file in main_files:
+            main_path = os.path.join(self.repository.repo_path, main_file)
+            if os.path.exists(main_path):
+                try:
+                    with open(main_path, 'r', encoding='utf-8') as f:
+                        main_content = f.read()
+                    main_file_found = main_file
+                    break
+                except Exception:
+                    continue
+        
+        # Also check in src/ directory
+        if not main_content:
+            src_path = os.path.join(self.repository.repo_path, 'src')
+            if os.path.exists(src_path):
+                for main_file in main_files:
+                    main_path = os.path.join(src_path, main_file)
+                    if os.path.exists(main_path):
+                        try:
+                            with open(main_path, 'r', encoding='utf-8') as f:
+                                main_content = f.read()
+                            main_file_found = f"src/{main_file}"
+                            break
+                        except Exception:
+                            continue
+        
+        if main_content:
+            info.append(f"Main entry point found: {main_file_found}")
+            
+            # Extract CLI information if using typer, click, or argparse
+            if 'typer' in main_content.lower():
+                info.append("Uses Typer for CLI interface")
+                # Extract command information
+                import re
+                commands = re.findall(r'@app\.command\(\)\s*\ndef\s+(\w+)', main_content)
+                if commands:
+                    info.append(f"Available commands: {', '.join(commands)}")
+            elif 'click' in main_content.lower():
+                info.append("Uses Click for CLI interface")
+            elif 'argparse' in main_content.lower():
+                info.append("Uses argparse for CLI interface")
+            
+            # Look for usage examples in docstrings or comments
+            docstring_match = re.search(r'"""([^"]*?)"""', main_content, re.DOTALL)
+            if docstring_match:
+                docstring = docstring_match.group(1)
+                if any(keyword in docstring.lower() for keyword in ['usage', 'example', 'command']):
+                    info.append(f"Usage information in docstring:\n{docstring[:500]}")
+        
+        # Look for README files for additional usage info
+        readme_files = ['README.md', 'README.rst', 'README.txt']
+        for readme_file in readme_files:
+            readme_path = os.path.join(self.repository.repo_path, readme_file)
+            if os.path.exists(readme_path):
+                try:
+                    with open(readme_path, 'r', encoding='utf-8') as f:
+                        readme_content = f.read()[:2000]  # First 2000 chars
+                    if any(keyword in readme_content.lower() for keyword in ['usage', 'how to run', 'getting started']):
+                        info.append(f"Usage information found in {readme_file}")
+                except Exception:
+                    pass
+        
+        return "\n".join(info) if info else "No specific usage information found in main files."
     
     def save_documentation(self, content: str, output_path: str) -> None:
         """Save documentation to a file."""
