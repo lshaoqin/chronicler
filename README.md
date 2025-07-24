@@ -113,6 +113,7 @@ While specific options are not fully detailed in the provided snippets, typical 
 *   `--llm-model <model_name>`: Selects a specific LLM model to use (e.g., `gpt-4`, `ollama/llama2`).
 *   `--vector-db <db_type>`: Chooses the vector database to use (e.g., `faiss`, `pinecone`, `chroma`).
 
+```
 ## 4. Architecture Overview
 
 Chronicler's architecture is modular, designed to separate concerns related to repository interaction, AI processing, and documentation management.
@@ -138,7 +139,7 @@ Chronicler's architecture is modular, designed to separate concerns related to r
 +--------+--------+                      |
          |                               |
          v                               |
-+--------+--------+      +-----------------+
++--------+--------+      -----------------+
 |   LLM Service   |<-----|  LLM Providers  |
 | (src/llm_service.py)   | (OpenAI, Ollama, |
 +--------+--------+      | Google GenAI)   |
@@ -180,6 +181,7 @@ Chronicler's architecture is modular, designed to separate concerns related to r
 *   **`src/vector_db_config.py` (Vector Database Configuration):** Manages the configuration and interaction with different pluggable vector databases. It handles operations like creating/managing collections, inserting embeddings, and performing similarity searches.
 *   **`src/doc_storage.py` (Documentation Storage):** Works in conjunction with `vector_db_config.py` to manage the storage and retrieval of documentation chunks and their corresponding vector embeddings within the chosen vector database. It ensures efficient retrieval of relevant information for the RAG system.
 *   **`src/documentation.py` (Documentation Generation):** Takes the output from the RAG system and structures it into the final documentation format (e.g., markdown files with a table of contents, as seen in `README.md`). It manages the overall documentation structure and content assembly.
+```
 
 ## 5. Key Workflows and Processes
 
@@ -189,11 +191,11 @@ Chronicler's architecture is modular, designed to separate concerns related to r
 2.  **Content Processing:** The raw code content is broken down into manageable chunks.
 3.  **Embedding Generation:** Each chunk is converted into a numerical vector (embedding) using a sentence transformer model.
 4.  **Vector Database Ingestion:** The embeddings, along with their associated text chunks, are stored in the configured vector database via `doc_storage.py` and `vector_db_config.py`.
-5.  **Documentation Synthesis (RAG):** For each section or file to be documented:
+5.  **Documentation Synthesis (RAG):** For each section or file identified for documentation, the following RAG process occurs:
     *   The `rag_system.py` queries the vector database to retrieve the most semantically relevant code chunks.
     *   These retrieved chunks, along with a prompt, are sent to the `llm_service.py` to be processed by an LLM.
     *   The LLM generates the documentation text based on the provided context.
-6.  **Documentation Assembly:** The `documentation.py` module collects the generated text for various sections and assembles them into structured markdown files, including a table of contents.
+6.  **Documentation Orchestration & Assembly:** The `documentation.py` module now orchestrates the overall documentation generation. It drives the process of identifying sections/files for documentation and initiating their RAG synthesis (as described in step 5). Once content is generated for all sections, it collects and assembles them into structured markdown files, including a table of contents, ensuring proper formatting and hierarchy.
 7.  **Output:** The complete documentation is saved to the specified output directory.
 
 ### `update` Workflow (Incremental Documentation Update)
@@ -306,32 +308,32 @@ The `RAGSystem` class is responsible for building and querying a knowledge base 
 
 ### Data Flow and Interactions
 
-The interaction between these components, and with other parts of the system, follows a clear data flow:
+The data flow within this core application logic is as follows:
 
-1.  **Source Code Ingestion**: The `RAGSystem` receives raw code content from the `Repository` object (see [Source Code & Documentation Management] for details on how the repository is managed).
-2.  **Text Chunking**: The `RAGSystem`'s `RecursiveCharacterTextSplitter` breaks down the raw code into smaller, semantically coherent chunks.
-3.  **Embedding Generation**: These text chunks are passed to the `LLMService`. The `LLMService` uses its configured embedding model (e.g., OpenAIEmbeddings, OllamaEmbeddings) to convert each text chunk into a high-dimensional vector.
-4.  **Vector Storage**: The `RAGSystem` takes these generated embeddings and stores them, along with their original text content and metadata (like file path), in a `FAISS` vector store. This process effectively creates a searchable knowledge base of the codebase.
-5.  **Retrieval (Implicit)**: When a query for documentation generation is made (orchestrated by `src/main.py` in the [Core Application Logic] section), the `RAGSystem` would:
-    *   Embed the query using the `LLMService`.
-    *   Perform a similarity search in the `FAISS` vector store to retrieve the most relevant code chunks.
-6.  **Augmented Generation (Implicit)**: The retrieved code chunks are then combined with the original query to form a comprehensive prompt. This augmented prompt is sent back to the `LLMService`'s chat model for final text generation, ensuring the LLM has specific context from the codebase.
+1.  **User Input**: The user invokes `src/main.py` via the command line, providing repository details, output preferences, and LLM configurations.
+2.  **Service Setup**: `main.py` uses these inputs to instantiate `Repository`, `LLMService`, and `RAGSystem` objects. Configuration details (API keys, model names) are passed to the respective services.
+3.  **Generator Instantiation**: `main.py` then creates an instance of `DocumentationGenerator`, passing the initialized `Repository`, `RAGSystem`, and `LLMService` objects to its constructor. This establishes the necessary connections for the generation process.
+4.  **Documentation Generation**: `main.py` triggers the main documentation generation method (e.g., `generate_documentation`) on the `DocumentationGenerator` instance.
+5.  **Internal Workflow within `DocumentationGenerator`**:
+    *   The `DocumentationGenerator` uses its `Repository` instance to access the codebase, list files, and potentially read file contents.
+    *   It queries the `RAGSystem` (which in turn might use the `LLMService` for embeddings and vector database lookups) to retrieve relevant code snippets or contextual information based on the current documentation task.
+    *   It sends prompts, along with retrieved context, to the `LLMService` to generate documentation text.
+    *   Finally, it uses `DocumentationStorage` to write the generated content to the specified output directory.
 
 ### Configuration and Dependencies
 
-*   **Environment Variables**: Both `LLMService` and `RAGSystem` rely heavily on environment variables for configuration:
-    *   `LLM_PROVIDER`: Specifies the LLM provider (e.g., `openai`, `gemini`, `ollama`).
-    *   `EMBEDDING_PROVIDER`: Specifies the embedding provider (e.g., `openai`, `gemini`, `ollama`, `local` for HuggingFace).
-    *   `LLM_MODEL`: The specific model name for the LLM (e.g., `gpt-4`, `llama2`).
-    *   `EMBEDDING_MODEL`: The specific model name for embeddings (e.g., `text-embedding-ada-002`, `nomic-embed-text`).
-    *   API keys for services like OpenAI or Google Gemini are typically managed through environment variables that `langchain` automatically picks up (e.g., `OPENAI_API_KEY`, `GOOGLE_API_KEY`).
-*   **External Libraries**: Both files extensively use `langchain` for LLM integration, text splitting, and vector store management.
-*   **Internal Dependencies**:
-    *   `RAGSystem` depends on `LLMService` for its core AI capabilities.
-    *   `RAGSystem` depends on `Repository` (from [Source Code & Documentation Management]) to access the codebase.
-    *   `RAGSystem` also interacts with `VectorDBConfig` (an upcoming section) for specific vector database configurations, although the direct usage is not fully visible in the provided snippet.
+The "Core Application Logic" relies on several external libraries and environment configurations:
 
-This robust integration of AI models and a RAG system allows Chronicler to generate highly relevant, context-aware, and comprehensive documentation directly from source code.
+*   **Python 3**: The application is written in Python 3.
+*   **`typer`**: For building the command-line interface.
+*   **`rich`**: For enhanced terminal output, including panels, colors, and progress bars.
+*   **`python-dotenv`**: For loading environment variables from `.env` files, crucial for managing API keys and default LLM/embedding configurations.
+*   **Environment Variables**:
+    *   `LLM_PROVIDER`, `EMBEDDING_PROVIDER`: Specify the default LLM and embedding service providers.
+    *   `LLM_MODEL`, `EMBEDDING_MODEL`: Define the default models to be used.
+    *   `OPENAI_API_KEY`, `GOOGLE_API_KEY`, etc.: API keys for respective LLM providers.
+
+These configurations can be overridden by command-line arguments passed to `src/main.py`, providing a flexible hierarchy for settings.
 
 ## Core Application Logic
 
@@ -344,8 +346,6 @@ The "Core Application Logic" acts as the conductor of the Chronicler orchestra. 
 `src/documentation.py`, on the other hand, contains the `DocumentationGenerator` class, which embodies the intricate steps required to analyze a repository, retrieve relevant context, interact with Language Models (LLMs), and finally, produce the structured documentation. It is the workhorse that performs the heavy lifting of content creation.
 
 The relationship is one of orchestration and delegation: `main.py` orchestrates the high-level flow and delegates the complex task of documentation generation to an instance of `DocumentationGenerator` from `documentation.py`.
-
-### Key Functionality and Components
 
 #### `src/main.py`: The Application Orchestrator
 
@@ -382,20 +382,6 @@ The relationship is one of orchestration and delegation: `main.py` orchestrates 
     *   Storing the generated documentation using `DocumentationStorage` (see [Source Code & Documentation Management] for details on how documentation is stored and managed).
     *   Providing visual feedback to the user via `rich.progress` during the generation process.
 
-### Data Flow and Interactions
-
-The data flow within this core application logic is as follows:
-
-1.  **User Input**: The user invokes `src/main.py` via the command line, providing repository details, output preferences, and LLM configurations.
-2.  **Service Setup**: `main.py` uses these inputs to instantiate `Repository`, `LLMService`, and `RAGSystem` objects. Configuration details (API keys, model names) are passed to the respective services.
-3.  **Generator Instantiation**: `main.py` then creates an instance of `DocumentationGenerator`, passing the initialized `Repository`, `RAGSystem`, and `LLMService` objects to its constructor. This establishes the necessary connections for the generation process.
-4.  **Documentation Generation**: `main.py` triggers the main documentation generation method (e.g., `generate_documentation`) on the `DocumentationGenerator` instance.
-5.  **Internal Workflow within `DocumentationGenerator`**:
-    *   The `DocumentationGenerator` uses its `Repository` instance to access the codebase, list files, and potentially read file contents.
-    *   It queries the `RAGSystem` (which in turn might use the `LLMService` for embeddings and vector database lookups) to retrieve relevant code snippets or contextual information based on the current documentation task.
-    *   It sends prompts, along with retrieved context, to the `LLMService` to generate documentation text.
-    *   Finally, it uses `DocumentationStorage` to write the generated content to the specified output directory.
-
 ### Architectural Patterns and Decisions
 
 *   **CLI-Driven Design**: The use of `typer` in `main.py` establishes a clear, user-friendly command-line interface, making the tool accessible and scriptable.
@@ -403,21 +389,6 @@ The data flow within this core application logic is as follows:
 *   **Dependency Injection**: The `DocumentationGenerator` class explicitly takes its dependencies (`Repository`, `RAGSystem`, `LLMService`) in its constructor. This pattern decouples the `DocumentationGenerator` from the concrete implementations of these services, allowing for easier testing, mocking, and future extensibility (e.g., swapping out LLM providers).
 *   **Configuration Management**: The application supports loading configuration from environment variables (`.env` files via `python-dotenv`) and overriding them with command-line arguments, providing a flexible and secure way to manage sensitive information like API keys.
 *   **Rich User Experience**: The integration of `rich` library throughout both `main.py` and `documentation.py` ensures that the user receives clear, visually appealing, and informative feedback during the entire process, including progress bars and status messages.
-
-### Configuration and Dependencies
-
-The "Core Application Logic" relies on several external libraries and environment configurations:
-
-*   **Python 3**: The application is written in Python 3.
-*   **`typer`**: For building the command-line interface.
-*   **`rich`**: For enhanced terminal output, including panels, colors, and progress bars.
-*   **`python-dotenv`**: For loading environment variables from `.env` files, crucial for managing API keys and default LLM/embedding configurations.
-*   **Environment Variables**:
-    *   `LLM_PROVIDER`, `EMBEDDING_PROVIDER`: Specify the default LLM and embedding service providers.
-    *   `LLM_MODEL`, `EMBEDDING_MODEL`: Define the default models to be used.
-    *   `OPENAI_API_KEY`, `GOOGLE_API_KEY`, etc.: API keys for respective LLM providers.
-
-These configurations can be overridden by command-line arguments passed to `src/main.py`, providing a flexible hierarchy for settings.
 
 ## Source Code & Documentation Management
 
