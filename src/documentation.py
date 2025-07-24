@@ -547,6 +547,14 @@ class DocumentationGenerator:
         """
         self.console.print(f"[blue]Using RAG to selectively update README for {len(changed_files)} changed files[/blue]")
         
+        # Get commit message for context
+        commit_message = None
+        if commit_hash:
+            try:
+                commit_message = self.repository.get_commit_message(commit_hash)
+            except Exception as e:
+                self.console.print(f"[yellow]Could not retrieve commit message: {str(e)}[/yellow]")
+        
         # Filter significant files
         significant_files = [f for f in changed_files if not self._should_skip_file(f)]
         
@@ -570,12 +578,14 @@ class DocumentationGenerator:
                 old_content, new_content = self.repository.get_file_diff(file_path, commit_hash)
                 
                 if new_content:  # File exists (not deleted)
-                    # Create context about what changed
-                    change_context = f"File: {file_path}\nChanges: {self._summarize_file_changes(old_content, new_content)}"
+                    # Create context about what changed, including commit message
+                    change_summary = self._summarize_file_changes(old_content, new_content, commit_message)
+                    change_context = f"File: {file_path}\nChanges: {change_summary}"
                     file_changes_context[file_path] = {
                         'old_content': old_content,
                         'new_content': new_content,
-                        'change_context': change_context
+                        'change_context': change_context,
+                        'commit_message': commit_message
                     }
                     
                     # Use RAG to find relevant sections
@@ -658,31 +668,40 @@ class DocumentationGenerator:
         
         return sections
     
-    def _summarize_file_changes(self, old_content: Optional[str], new_content: str) -> str:
+    def _summarize_file_changes(self, old_content: Optional[str], new_content: str, commit_message: Optional[str] = None) -> str:
         """
-        Create a summary of what changed in a file.
+        Create a summary of what changed in a file, incorporating commit message context.
         
         Args:
             old_content: Previous file content (None if new file)
             new_content: Current file content
+            commit_message: Commit message providing context about the changes
             
         Returns:
-            Summary of changes
+            Summary of changes with commit context
         """
+        # Basic change statistics
         if old_content is None:
-            return f"New file created with {len(new_content.splitlines())} lines"
-        
-        old_lines = old_content.splitlines() if old_content else []
-        new_lines = new_content.splitlines()
-        
-        # Simple change summary
-        lines_added = len(new_lines) - len(old_lines)
-        if lines_added > 0:
-            return f"File modified: {lines_added} lines added, {len(new_lines)} total lines"
-        elif lines_added < 0:
-            return f"File modified: {abs(lines_added)} lines removed, {len(new_lines)} total lines"
+            base_summary = f"New file created with {len(new_content.splitlines())} lines"
         else:
-            return f"File modified: content changed, {len(new_lines)} lines"
+            old_lines = old_content.splitlines() if old_content else []
+            new_lines = new_content.splitlines()
+            
+            lines_added = len(new_lines) - len(old_lines)
+            if lines_added > 0:
+                base_summary = f"File modified: {lines_added} lines added, {len(new_lines)} total lines"
+            elif lines_added < 0:
+                base_summary = f"File modified: {abs(lines_added)} lines removed, {len(new_lines)} total lines"
+            else:
+                base_summary = f"File modified: content changed, {len(new_lines)} lines"
+        
+        # Enhance with commit message context if available
+        if commit_message and commit_message.strip():
+            # Clean up commit message (remove extra whitespace, newlines)
+            clean_message = ' '.join(commit_message.strip().split())
+            return f"{base_summary}. Commit context: {clean_message}"
+        
+        return base_summary
     
     def _find_relevant_sections_with_rag(self, change_context: str, readme_sections: Dict[str, str]) -> List[str]:
         """
