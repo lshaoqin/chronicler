@@ -610,6 +610,12 @@ class DocumentationGenerator:
         # Step 4: Reconstruct the README with updated sections
         updated_readme = self._reconstruct_readme(readme_sections, updated_sections)
         
+        # Step 5: Generate and display diff showing the changes
+        self._generate_and_display_diff(existing_readme, updated_readme)
+        
+        # Step 6: Generate HTML diff file for browser viewing
+        self._generate_html_diff_file(existing_readme, updated_readme)
+        
         self.console.print(f"[green]Successfully updated {len(updated_sections)} sections in README[/green]")
         return updated_readme
     
@@ -886,6 +892,244 @@ class DocumentationGenerator:
                 reconstructed_parts.append(original_content)
         
         return '\n\n'.join(reconstructed_parts)
+    
+    def _generate_and_display_diff(self, original_readme: str, updated_readme: str) -> None:
+        """
+        Generate and display a diff showing the changes made to the README.
+        
+        Args:
+            original_readme: The original README content
+            updated_readme: The updated README content
+        """
+        import difflib
+        from rich.syntax import Syntax
+        from rich.panel import Panel
+        
+        # Generate unified diff
+        original_lines = original_readme.splitlines(keepends=True)
+        updated_lines = updated_readme.splitlines(keepends=True)
+        
+        diff_lines = list(difflib.unified_diff(
+            original_lines,
+            updated_lines,
+            fromfile='README.md (before)',
+            tofile='README.md (after)',
+            lineterm=''
+        ))
+        
+        if not diff_lines:
+            self.console.print("[yellow]No changes detected in the documentation.[/yellow]")
+            return
+        
+        # Count changes
+        additions = sum(1 for line in diff_lines if line.startswith('+') and not line.startswith('+++'))
+        deletions = sum(1 for line in diff_lines if line.startswith('-') and not line.startswith('---'))
+        
+        # Display diff summary
+        self.console.print(f"\n[bold green]📝 Documentation Changes Summary[/bold green]")
+        self.console.print(f"[green]+{additions} additions[/green] [red]-{deletions} deletions[/red]")
+        
+        # Join diff lines and display with syntax highlighting
+        diff_content = ''.join(diff_lines)
+        
+        # Limit diff display to avoid overwhelming output
+        if len(diff_lines) > 100:
+            # Show first 50 and last 50 lines with a separator
+            first_part = ''.join(diff_lines[:50])
+            last_part = ''.join(diff_lines[-50:])
+            diff_content = first_part + "\n... (diff truncated, showing first 50 and last 50 lines) ...\n" + last_part
+            self.console.print(f"[yellow]Note: Diff truncated to show first and last 50 lines (total: {len(diff_lines)} lines)[/yellow]")
+        
+        # Display the diff with syntax highlighting
+        try:
+            syntax = Syntax(diff_content, "diff", theme="monokai", line_numbers=False, word_wrap=True)
+            panel = Panel(
+                syntax,
+                title="[bold blue]📋 Documentation Changes[/bold blue]",
+                border_style="blue",
+                expand=False
+            )
+            self.console.print(panel)
+        except Exception as e:
+            # Fallback to plain text if syntax highlighting fails
+            self.console.print("[yellow]Diff (plain text):[/yellow]")
+            self.console.print(diff_content)
+    
+    def _generate_html_diff_file(self, original_readme: str, updated_readme: str) -> None:
+        """
+        Generate an HTML diff file that can be opened in a browser.
+        
+        Args:
+            original_readme: The original README content
+            updated_readme: The updated README content
+        """
+        import difflib
+        import html
+        from datetime import datetime
+        
+        try:
+            # Generate HTML diff using difflib
+            html_diff = difflib.HtmlDiff(wrapcolumn=80)
+            
+            original_lines = original_readme.splitlines()
+            updated_lines = updated_readme.splitlines()
+            
+            # Generate the HTML diff
+            diff_html = html_diff.make_file(
+                original_lines,
+                updated_lines,
+                fromdesc='README.md (before)',
+                todesc='README.md (after)',
+                context=True,
+                numlines=3
+            )
+            
+            # Enhance the HTML with custom styling
+            enhanced_html = self._enhance_html_diff(diff_html)
+            
+            # Save the HTML diff file
+            diff_filename = f"documentation_changes_{self.timestamp}.html"
+            diff_filepath = os.path.join(self.output_dir, diff_filename)
+            
+            with open(diff_filepath, 'w', encoding='utf-8') as f:
+                f.write(enhanced_html)
+            
+            self.console.print(f"[blue]📄 HTML diff saved to: {diff_filepath}[/blue]")
+            self.console.print(f"[blue]🌐 Open in browser: file://{os.path.abspath(diff_filepath)}[/blue]")
+            
+        except Exception as e:
+            self.console.print(f"[yellow]Could not generate HTML diff file: {str(e)}[/yellow]")
+    
+    def _enhance_html_diff(self, html_content: str) -> str:
+        """
+        Enhance the HTML diff with better styling and metadata.
+        
+        Args:
+            html_content: The original HTML diff content
+            
+        Returns:
+            Enhanced HTML content
+        """
+        from datetime import datetime
+        
+        # Custom CSS for better styling
+        custom_css = """
+        <style>
+            body {
+                font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+                font-size: 13px;
+                line-height: 1.4;
+                margin: 20px;
+                background-color: #f8f9fa;
+            }
+            .header {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                padding: 20px;
+                border-radius: 8px;
+                margin-bottom: 20px;
+                text-align: center;
+            }
+            .header h1 {
+                margin: 0;
+                font-size: 24px;
+            }
+            .header p {
+                margin: 5px 0 0 0;
+                opacity: 0.9;
+            }
+            table {
+                border-collapse: collapse;
+                width: 100%;
+                background: white;
+                border-radius: 8px;
+                overflow: hidden;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            }
+            .diff_header {
+                background-color: #e9ecef;
+                font-weight: bold;
+                padding: 10px;
+                border-bottom: 2px solid #dee2e6;
+            }
+            .diff_next {
+                background-color: #fff3cd;
+                border: 1px solid #ffeaa7;
+                border-radius: 4px;
+                padding: 4px 8px;
+                margin: 2px;
+                display: inline-block;
+            }
+            .diff_add {
+                background-color: #d4edda;
+                border-left: 4px solid #28a745;
+            }
+            .diff_chg {
+                background-color: #fff3cd;
+                border-left: 4px solid #ffc107;
+            }
+            .diff_sub {
+                background-color: #f8d7da;
+                border-left: 4px solid #dc3545;
+            }
+            td {
+                padding: 4px 8px;
+                vertical-align: top;
+                white-space: pre-wrap;
+                word-wrap: break-word;
+            }
+            .stats {
+                background: white;
+                padding: 15px;
+                border-radius: 8px;
+                margin-bottom: 20px;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            }
+            .stats h3 {
+                margin-top: 0;
+                color: #495057;
+            }
+            .add-count { color: #28a745; font-weight: bold; }
+            .del-count { color: #dc3545; font-weight: bold; }
+        </style>
+        """
+        
+        # Count changes for statistics
+        add_count = html_content.count('class="diff_add"')
+        del_count = html_content.count('class="diff_sub"')
+        chg_count = html_content.count('class="diff_chg"')
+        
+        # Create header with metadata
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        header = f"""
+        <div class="header">
+            <h1>📝 Chronicler Documentation Changes</h1>
+            <p>Generated on {current_time}</p>
+        </div>
+        
+        <div class="stats">
+            <h3>📊 Change Summary</h3>
+            <p>
+                <span class="add-count">+{add_count} additions</span> • 
+                <span class="del-count">-{del_count} deletions</span> • 
+                <span style="color: #ffc107; font-weight: bold;">{chg_count} modifications</span>
+            </p>
+        </div>
+        """
+        
+        # Insert custom CSS and header into the HTML
+        enhanced_html = html_content.replace(
+            '<head>',
+            f'<head>\n<title>Chronicler Documentation Changes</title>\n{custom_css}'
+        )
+        
+        # Insert header after body tag
+        enhanced_html = enhanced_html.replace(
+            '<body>',
+            f'<body>\n{header}'
+        )
+        
+        return enhanced_html
     
     def _generate_file_documentation(self, file_path: str, content: str) -> str:
         """
