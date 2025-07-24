@@ -869,19 +869,22 @@ class DocumentationGenerator:
             3. Maintaining accuracy and clarity
             4. Keeping the same markdown formatting
             
-            If no updates are needed, return the original content unchanged.
-            
-            Updated Section:
+            IMPORTANT FORMATTING INSTRUCTIONS:
+            - You may use markdown code blocks for examples, configuration snippets, or code samples when helpful
+            - DO NOT wrap your entire response in code block markers
+            - Write clear documentation text with appropriate markdown headings
+            - If no updates are needed, return the original content unchanged
             """
             
             # Use the correct LLM invocation method
             response = self.llm_service.llm.invoke([
-                {"role": "system", "content": "You are a technical documentation expert. Update documentation sections based on code changes while preserving structure and style."},
+                {"role": "system", "content": "You are a technical documentation expert. Update documentation sections based on code changes while preserving structure and style. You may use markdown code blocks for examples and code samples, but do not wrap your entire response in code blocks."},
                 {"role": "user", "content": update_prompt}
             ])
             
-            # Extract content from response
+            # Extract and clean the response content
             updated_content = self.llm_service._extract_response_content(response)
+            updated_content = self._clean_llm_response(updated_content)
             return updated_content.strip()
             
         except Exception as e:
@@ -1168,9 +1171,7 @@ class DocumentationGenerator:
         Generate documentation for the following file: {file_path}
         
         File context:
-        ```
         {context}
-        ```
         
         Your documentation should include ONLY these sections:
         1. A clear description of the file's purpose and functionality
@@ -1179,23 +1180,29 @@ class DocumentationGenerator:
         
         Format the output as markdown with appropriate headings.
         
-        CRITICAL INSTRUCTION: This is PURE DOCUMENTATION, not a code review. 
+        CRITICAL INSTRUCTIONS:
+        - This is PURE DOCUMENTATION, not a code review
         - DO NOT include ANY sections titled "Improvement Suggestions", "Recommendations", or similar
         - DO NOT suggest any changes or improvements to the codebase
         - DO NOT critique the code quality, organization, or structure
         - DO NOT mention what "could be" or "should be" done differently
         - ONLY describe what exists in the codebase as it is currently implemented
         - FOCUS EXCLUSIVELY on factual description and explanation
+        - You may use markdown code blocks for examples, configuration snippets, or code samples when helpful
+        - DO NOT wrap your entire response in code block markers
         """
         
         # Generate documentation using the custom prompt
         response = self.llm_service.llm.invoke([
-            {"role": "system", "content": "You are a technical documentation expert. Your task is to create clear, factual documentation for a code file."},
+            {"role": "system", "content": "You are a technical documentation expert. Your task is to create clear, factual documentation for a code file. You may use markdown code blocks for examples and code samples, but do not wrap your entire response in code blocks."},
             {"role": "user", "content": prompt}
         ])
         
         # Extract content from response
         file_doc = self.llm_service._extract_response_content(response)
+        
+        # Clean up any stray markdown formatting
+        file_doc = self._clean_llm_response(file_doc)
         
         return file_doc
     
@@ -1228,31 +1235,32 @@ class DocumentationGenerator:
         File path: {file_path}
         
         Current documentation:
-        ```
         {section.content}
-        ```
         
         File context:
-        ```
         {context}
-        ```
         
         Please update the documentation to reflect the current state of the file.
         Focus on accuracy and clarity. Preserve any useful information from the existing
         documentation that is still relevant. Add new information about any new features
         or changes. Remove information about features that no longer exist.
         
-        Return ONLY the updated documentation content in markdown format.
+        IMPORTANT FORMATTING INSTRUCTIONS:
+        - Return ONLY the updated documentation content in markdown format
+        - You may use markdown code blocks for examples, configuration snippets, or code samples when helpful
+        - DO NOT wrap your entire response in code block markers
+        - Write clear documentation text with appropriate markdown headings
         """
         
         # Generate updated documentation
-        updated_doc = self.llm_service.llm.invoke([
-            {"role": "system", "content": "You are a documentation expert. Your task is to update existing documentation based on changes to a file."},
+        response = self.llm_service.llm.invoke([
+            {"role": "system", "content": "You are a technical documentation expert. Update the provided documentation to reflect the current state of the code. You may use markdown code blocks for examples and code samples, but do not wrap your entire response in code blocks."},
             {"role": "user", "content": prompt}
         ])
         
-        # Extract content from response
-        updated_content = self.llm_service._extract_response_content(updated_doc)
+        # Extract and clean the response content
+        updated_content = self.llm_service._extract_response_content(response)
+        updated_content = self._clean_llm_response(updated_content)
         
         # Update the section
         section.content = updated_content
@@ -1269,6 +1277,41 @@ class DocumentationGenerator:
         else:
             return os.path.basename(os.path.abspath(repo_url_or_path))
             
+    def _clean_llm_response(self, content: str) -> str:
+        """
+        Clean up LLM response content by handling cases where the entire response
+        is wrapped in code blocks, while preserving legitimate code blocks within
+        the documentation content.
+        
+        Args:
+            content: Raw LLM response content
+            
+        Returns:
+            Cleaned content with wrapper code blocks removed but internal code blocks preserved
+        """
+        if not content:
+            return content
+            
+        content = content.strip()
+        
+        # Check if the entire response is wrapped in code blocks
+        # This happens when LLM treats the entire documentation as a code block
+        if content.startswith('```') and content.endswith('```'):
+            lines = content.split('\n')
+            
+            # Check if it's a simple wrapper (first line is just ``` or ```language)
+            first_line = lines[0].strip()
+            if first_line == '```' or (first_line.startswith('```') and len(first_line.split()) == 1):
+                # Check if last line is just ```
+                last_line = lines[-1].strip()
+                if last_line == '```':
+                    # Remove the wrapper code blocks but keep everything in between
+                    inner_content = '\n'.join(lines[1:-1])
+                    return inner_content.strip()
+        
+        # If not wrapped entirely, return as-is (preserving internal code blocks)
+        return content
+    
     def _should_skip_file(self, file_path: str) -> bool:
         """
         Determine if a file should be skipped in documentation generation.
